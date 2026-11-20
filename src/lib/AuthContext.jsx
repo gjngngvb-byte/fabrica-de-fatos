@@ -27,6 +27,14 @@ export function AuthProvider({ children }) {
     return () => listener.subscription.unsubscribe();
   }, [queryClient]);
 
+  useEffect(() => {
+    if (!data?.user?.id) return;
+    supabase.functions.invoke("claim-legacy-data").then(({ data: result, error: importError }) => {
+      if (result?.imported) queryClient.invalidateQueries();
+      if (importError) console.warn("Importação do histórico legado:", importError.message);
+    });
+  }, [data?.user?.id, queryClient]);
+
   const value = useMemo(() => ({
     user: data?.user ?? null,
     isAuthenticated: !!data?.user,
