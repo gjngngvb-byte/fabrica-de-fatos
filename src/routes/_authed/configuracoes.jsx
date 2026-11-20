@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { createFileRoute, useRouter } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
 import { useAuth } from "@/lib/AuthContext";
 import { getStudio, saveStudio } from "@/lib/video-fns";
+import { supabase } from "@/lib/supabase";
 
 export const Route = createFileRoute("/_authed/configuracoes")({
   head: () => ({ meta: [{ title: "Ajustes — Estúdio" }] }),
@@ -37,6 +38,23 @@ function Settings() {
   const router = useRouter();
   const { user, logout } = useAuth();
   const [saving, setSaving] = useState(false);
+  const [tiktok, setTiktok] = useState({ loading: true, connected: false, account: null, busy: false });
+  useEffect(() => {
+    supabase.functions.invoke("tiktok-connect", { body: { action: "status" } }).then(({ data, error }) => {
+      setTiktok({ loading: false, connected: !!data?.connected, account: data?.account || null, busy: false });
+      if (error) console.warn("TikTok status:", error.message);
+    });
+  }, []);
+  const connectTikTok = async () => {
+    setTiktok((v) => ({ ...v, busy: true }));
+    const { data, error } = await supabase.functions.invoke("tiktok-connect", { body: { action: "start" } });
+    if (error || data?.error) {
+      toast.error(data?.error || error?.message || "Não foi possível iniciar a conexão TikTok.");
+      setTiktok((v) => ({ ...v, busy: false }));
+      return;
+    }
+    window.location.href = data.url;
+  };
   const [form, setForm] = useState({
     niche: studio.niche || "",
     tone: studio.tone || "",
@@ -89,6 +107,14 @@ function Settings() {
       <p className="mt-3 text-sm text-muted-foreground">
         Tudo o que a fábrica usa para escrever, narrar e desenhar cada vídeo.
       </p>
+
+      <section className="mt-8 rounded-2xl border border-border/70 bg-card/40 p-5">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div><p className="text-sm font-medium">Conta TikTok</p><p className="mt-1 text-xs text-muted-foreground">{tiktok.loading ? "Verificando conexão..." : tiktok.connected ? `Conectada${tiktok.account?.display_name ? ` como ${tiktok.account.display_name}` : ""}` : "Conecte para habilitar a publicação dos vídeos."}</p></div>
+          <button type="button" onClick={connectTikTok} disabled={tiktok.busy || tiktok.loading || tiktok.connected} className="inline-flex h-10 items-center rounded-full bg-foreground px-4 text-xs font-medium text-background disabled:opacity-50">{tiktok.busy ? "Conectando..." : tiktok.connected ? "Conectada" : "Conectar TikTok"}</button>
+        </div>
+        <p className="mt-3 text-xs text-muted-foreground">A publicação direta depende da aprovação do app nas permissões de publicação do TikTok.</p>
+      </section>
 
       <form onSubmit={submit} className="mt-10 space-y-5">
         <div className="grid gap-5 sm:grid-cols-2">
