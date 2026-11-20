@@ -172,7 +172,7 @@ export default function RenderBlock({ video }) {
             </div>
             <div className="h-2 overflow-hidden rounded-full bg-secondary">
               {render.progress === null ? (
-                <div className="h-full w-1/3 animate-[progress-slide_1.6s_ease-in-out_infinite] rounded-full bg-primary" />
+                <div className="h-full w-1/3 animate-pulse rounded-full bg-primary" />
               ) : (
                 <div className="h-full rounded-full bg-primary transition-all duration-500" style={{ width: render.progress + "%" }} />
               )}
