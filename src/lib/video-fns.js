@@ -36,11 +36,17 @@ export const ensureTodayPlan = createServerFn({ method: "POST" })
       .eq("created_by", context.user.id).eq("scheduled_date", today).order("slot", { ascending: true });
     if (error) throw error;
     const videos = existing || [];
-    if (videos.length < target) {
-      const missing = Array.from({ length: target - videos.length }, (_, i) => ({
-        created_by: context.user.id, scheduled_date: today, slot: videos.length + i + 1, status: "planejado",
+    const existingSlots = new Set(videos.map((video) => video.slot));
+    const missing = Array.from({ length: target }, (_, i) => i + 1)
+      .filter((slot) => !existingSlots.has(slot))
+      .map((slot) => ({
+        created_by: context.user.id, scheduled_date: today, slot, status: "planejado",
       }));
-      const { error: insertError } = await supabase.from("videos").insert(missing);
+    if (missing.length) {
+      // The legacy import can create today's slots at the same time as this loader.
+      // Ignore conflicts so concurrent requests never break the dashboard.
+      const { error: insertError } = await supabase.from("videos")
+        .upsert(missing, { onConflict: "created_by,scheduled_date,slot", ignoreDuplicates: true });
       if (insertError) throw insertError;
     }
     const { data: refreshed, error: refreshError } = await supabase.from("videos").select("*")
