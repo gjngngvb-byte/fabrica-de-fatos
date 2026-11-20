@@ -70,7 +70,7 @@ function Today() {
           </p>
         </div>
         <button
-          onClick={() => (next ? mutation.mutate(next.id) : toast("Todos os vídeos de hoje já estão prontos."))}
+          onClick={() => (next ? mutation.mutate(next.id) : toast("Todos os roteiros de hoje já foram criados."))}
           disabled={mutation.isPending || !next}
           className="inline-flex h-11 shrink-0 items-center gap-2 self-start rounded-full bg-primary px-5 text-sm font-medium text-primary-foreground transition-transform hover:-translate-y-0.5 disabled:translate-y-0 disabled:opacity-50 sm:self-auto"
         >
@@ -80,7 +80,7 @@ function Today() {
       </header>
 
       <div className="mt-10 grid gap-3 sm:grid-cols-3">
-        <Metric value={ready} label="Prontos para gravar" accent />
+        <Metric value={ready} label="Roteiros prontos" accent />
         <Metric value={published} label="Publicados hoje" />
         <Metric value={Math.max(videos.length - ready - published, 0)} label="Na fila" />
       </div>
