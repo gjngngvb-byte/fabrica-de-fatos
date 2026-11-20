@@ -19,7 +19,7 @@ export default function VideoRow({ video }) {
       <span className="hidden shrink-0 font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground sm:block">
         {video.scheduled_date || ""}
       </span>
-      <StatusPill status={video.status} />
+      <StatusPill status={video.status === "pronto" && !video.mp4_url ? "roteiro" : video.status} />
     </Link>
   );
 }
