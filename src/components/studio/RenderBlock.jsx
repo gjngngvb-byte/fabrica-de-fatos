@@ -19,7 +19,7 @@ export default function RenderBlock({ video }) {
   });
   const [busy, setBusy] = useState(false);
 
-  const rendering = render.status === "renderizando";
+  const rendering = render.status === "renderizando" || render.status === "ajustando_proporcao";
 
   useEffect(() => {
     if (!rendering) return;
@@ -105,10 +105,10 @@ export default function RenderBlock({ video }) {
           className="flex h-10 w-full items-center justify-center gap-2 rounded-full bg-primary text-xs font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-40"
         >
           {busy || rendering ? <Loader2 className="size-3.5 animate-spin" /> : <Film className="size-3.5" />}
-          {rendering ? "Renderizando…" : busy ? "Enviando" : "Montar vídeo MP4"}
+          {render.status === "ajustando_proporcao" ? "Ajustando para 9:16…" : rendering ? "Gerando vídeo com Gemini…" : busy ? "Enviando" : "Criar vídeo com Gemini"}
         </button>
         <p className="text-center font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
-          {rendering ? "pode sair desta página" : "15s · 9:16 · 720p"}
+          {render.status === "ajustando_proporcao" ? "Verificando e reenquadrando o vídeo" : rendering ? "Gemini está criando vídeo, narração, animação e trilha" : "9:16 · 720p · MP4"}
         </p>
         {render.error && <p className="text-center text-[11px] text-destructive">{render.error}</p>}
       </div>
