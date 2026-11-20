@@ -7,7 +7,8 @@ Aplicação TanStack Start migrada do Base44 para Supabase + Vercel.
 - Supabase: projeto `euhaqqwzfsezbupsmjas` na região `sa-east-1`.
 - Banco: tabelas `profiles`, `studios`, `videos`, `tiktok_connections`, `tiktok_oauth_states` e `tiktok_publications`, com RLS.
 - Storage: bucket privado `assets`.
-- Edge Functions: `generate-video-kit`, `render-video`, `tiktok-connect`, `tiktok-callback`, `tiktok-publish`.
+- Edge Functions: `generate-video-kit`, `render-video`, `tiktok-connect`, `tiktok-callback`, `tiktok-publish`, `claim-legacy-data`.
+- Histórico antigo: 5 vídeos e 1 configuração do estúdio preservados em uma fila privada; serão copiados para o primeiro usuário que criar conta, incluindo mídias acessíveis.
 - Vercel: projeto `fabrica-de-fatos`, conectado ao branch `main` do GitHub.
 
 ## Desenvolvimento
