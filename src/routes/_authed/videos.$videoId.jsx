@@ -67,7 +67,7 @@ function VideoDetail() {
       </Link>
 
       <header className="mt-6 flex flex-wrap items-center gap-3">
-        <StatusPill status={video.status} />
+        <StatusPill status={video.status === "pronto" && !video.mp4_url ? "roteiro" : video.status} />
         <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
           {video.scheduled_date} · {video.scenes?.length || 0} cenas
         </span>
