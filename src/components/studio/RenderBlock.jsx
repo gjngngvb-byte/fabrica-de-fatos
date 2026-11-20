@@ -28,7 +28,7 @@ export default function RenderBlock({ video }) {
   const [busy, setBusy] = useState(false);
   const [downloading, setDownloading] = useState(false);
 
-  const rendering = render.status === "renderizando" || render.status === "ajustando_proporcao";
+  const rendering = render.status === "renderizando" || render.status === "ajustando_proporcao" || render.status === "finalizando_arquivo";
 
   useEffect(() => {
     if (!rendering) return;
@@ -157,14 +157,14 @@ export default function RenderBlock({ video }) {
           className="flex h-11 w-full items-center justify-center gap-2 rounded-full bg-primary text-xs font-semibold text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-40"
         >
           {busy || rendering ? <Loader2 className="size-4 animate-spin" /> : <Film className="size-4" />}
-          {render.status === "ajustando_proporcao" ? "Ajustando formato 9:16…" : rendering ? "Gerando vídeo…" : busy ? "Iniciando…" : "Criar vídeo MP4"}
+          {render.status === "ajustando_proporcao" ? "Ajustando formato 9:16…" : render.status === "finalizando_arquivo" ? "Preparando arquivo MP4…" : rendering ? "Gerando vídeo…" : busy ? "Iniciando…" : "Criar vídeo MP4"}
         </button>
 
         {rendering && (
           <div className="rounded-xl border border-border bg-card/60 p-3">
             <div className="mb-2 flex items-center justify-between gap-3 text-[11px]">
               <span className="font-medium text-foreground">
-                {render.status === "ajustando_proporcao" ? "Validando enquadramento" : "Renderização em andamento"}
+                {render.status === "ajustando_proporcao" ? "Validando enquadramento" : render.status === "finalizando_arquivo" ? "Preparando arquivo para download" : "Renderização em andamento"}
               </span>
               <span className="font-mono text-muted-foreground">
                 {render.progress === null ? "Progresso não informado" : render.progress + "%"}
