@@ -80,9 +80,26 @@ export const getStudio = createServerFn({ method: "POST" })
   .middleware([requireUser])
   .handler(async ({ context }) => loadStudio(context.getSupabase(), context.user.id));
 
+export const createManualVideo = createServerFn({ method: "POST" })
+  .middleware([requireUser])
+  .handler(async ({ context }) => {
+    const supabase = context.getSupabase();
+    const studio = await loadStudio(supabase, context.user.id);
+    const today = new Date().toISOString().slice(0, 10);
+    const { data: video, error } = await supabase.from("videos").insert({
+      created_by: context.user.id,
+      scheduled_date: today,
+      slot: null,
+      status: "planejado",
+      voice: studio.voice || "river",
+    }).select("*").single();
+    if (error) throw error;
+    return video;
+  });
+
 export const generateVideoKit = createServerFn({ method: "POST" })
   .middleware([requireUser])
-  .validator(z.object({ videoId: z.string().uuid(), sceneCount: z.union([z.literal(3), z.literal(10)]).optional().default(10) }))
+  .validator(z.object({ videoId: z.string().uuid(), sceneCount: z.union([z.literal(0), z.literal(3)]).optional().default(0) }))
   .handler(async ({ data, context }) => {
     const supabase = context.getSupabase();
     const { data: video, error: lookupError } = await supabase.from("videos").select("id")
