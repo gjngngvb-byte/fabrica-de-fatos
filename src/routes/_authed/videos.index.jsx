@@ -13,7 +13,7 @@ export const Route = createFileRoute("/_authed/videos/")({
 
 const FILTERS = [
   { value: "", label: "Todos" },
-  { value: "pronto", label: "Prontos" },
+  { value: "pronto", label: "Roteiros" },
   { value: "publicado", label: "Publicados" },
   { value: "planejado", label: "Na fila" },
   { value: "falhou", label: "Falhas" },
