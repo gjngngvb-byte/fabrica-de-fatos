@@ -110,7 +110,14 @@ export const generateVideoKit = createServerFn({ method: "POST" })
     });
     if (error) throw new Error(error.message || "Falha ao gerar o vídeo.");
     if (result?.error) throw new Error(result.error);
-    return result.video;
+
+    // Assim que o roteiro fica pronto, inicia a renderização do MP4 sem ação manual.
+    const { data: renderResult, error: renderError } = await supabase.functions.invoke("render-video", {
+      body: { videoId: data.videoId, action: "start" },
+    });
+    if (renderError) throw new Error(renderError.message || "Roteiro criado, mas não foi possível iniciar o MP4 automaticamente.");
+    if (renderResult?.error) throw new Error(renderResult.error);
+    return { ...result.video, ...(renderResult?.video || {}), render_started: true };
   });
 
 export const generateNarration = createServerFn({ method: "POST" })
