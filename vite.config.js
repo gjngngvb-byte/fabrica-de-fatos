@@ -1,5 +1,6 @@
 import { fileURLToPath, URL } from "node:url";
 import { tanstackStart } from "@tanstack/react-start/plugin/vite";
+import { nitro } from "nitro/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 
@@ -9,5 +10,5 @@ export default defineConfig({
       "@": fileURLToPath(new URL("./src", import.meta.url)),
     },
   },
-  plugins: [tanstackStart({ srcDirectory: "src" }), react()],
+  plugins: [tanstackStart({ srcDirectory: "src" }), nitro(), react()],
 });
