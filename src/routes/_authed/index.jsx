@@ -27,7 +27,8 @@ function Metric({ value, label, accent }) {
 function Today() {
   const { videos, studio, today } = Route.useLoaderData();
   const router = useRouter();
-  const generate = useServerFn(generateVideoKit);\n  const createManual = useServerFn(createManualVideo);
+  const generate = useServerFn(generateVideoKit);
+  const createManual = useServerFn(createManualVideo);
   const [sceneCount, setSceneCount] = useState(0);
 
   const mutation = useMutation({
@@ -44,7 +45,6 @@ function Today() {
 
   const ready = videos.filter((v) => v.status === "pronto").length;
   const published = videos.filter((v) => v.status === "publicado").length;
-  const next = videos.find((v) => v.status !== "pronto" && v.status !== "publicado");
 
   const dateLabel = new Date(`${today}T12:00:00`).toLocaleDateString("pt-BR", {
     weekday: "long",
@@ -67,8 +67,7 @@ function Today() {
             A fila de <span className="italic text-primary">hoje</span>
           </h1>
           <p className="mt-3 max-w-md text-sm leading-relaxed text-muted-foreground">
-            {studio.niche} viram vídeos verticais. A automação prepara a quantidade diária configurada, e você pode gerar quantos quiser manualmente. {studio.videos_per_day} por dia, sem
-            você escrever uma linha.
+            {studio.niche} viram vídeos verticais. A automação prepara {studio.videos_per_day} vídeos por dia, e você pode gerar quantos quiser manualmente.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
