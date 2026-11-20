@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
 import { useMutation } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
@@ -27,9 +28,10 @@ function Today() {
   const { videos, studio, today } = Route.useLoaderData();
   const router = useRouter();
   const generate = useServerFn(generateVideoKit);
+  const [sceneCount, setSceneCount] = useState(10);
 
   const mutation = useMutation({
-    mutationFn: (videoId) => generate({ data: { videoId } }),
+    mutationFn: ({ videoId, sceneCount }) => generate({ data: { videoId, sceneCount } }),
     onSuccess: () => {
       toast.success("Vídeo pronto para gravar.");
       router.invalidate();
@@ -69,14 +71,23 @@ function Today() {
             você escrever uma linha.
           </p>
         </div>
-        <button
-          onClick={() => (next ? mutation.mutate(next.id) : toast("Todos os roteiros de hoje já foram criados."))}
+        <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
+          <label className="flex h-11 items-center gap-2 rounded-full border border-border px-3 text-xs text-muted-foreground">
+            Cenas
+            <select value={sceneCount} onChange={(event) => setSceneCount(Number(event.target.value))} className="bg-transparent font-medium text-foreground outline-none">
+              <option value={10}>10 (padrão)</option>
+              <option value={3}>3 (compacto)</option>
+            </select>
+          </label>
+          <button
+          onClick={() => (next ? mutation.mutate({ videoId: next.id, sceneCount }) : toast("Todos os roteiros de hoje já foram criados."))}
           disabled={mutation.isPending || !next}
           className="inline-flex h-11 shrink-0 items-center gap-2 self-start rounded-full bg-primary px-5 text-sm font-medium text-primary-foreground transition-transform hover:-translate-y-0.5 disabled:translate-y-0 disabled:opacity-50 sm:self-auto"
         >
           <Sparkles className={`size-4 ${mutation.isPending ? "animate-pulse" : ""}`} />
           {mutation.isPending ? "Gerando…" : "Gerar próximo"}
-        </button>
+          </button>
+        </div>
       </header>
 
       <div className="mt-10 grid gap-3 sm:grid-cols-3">
@@ -99,8 +110,8 @@ function Today() {
                 key={video.id}
                 video={video}
                 index={i}
-                onGenerate={(v) => mutation.mutate(v.id)}
-                busy={mutation.isPending && mutation.variables === video.id}
+                onGenerate={(v) => mutation.mutate({ videoId: v.id, sceneCount })}
+                busy={mutation.isPending && mutation.variables?.videoId === video.id}
                 style={{ animationDelay: `${i * 60}ms` }}
               />
             ))}
