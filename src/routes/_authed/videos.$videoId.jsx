@@ -3,6 +3,7 @@ import { createFileRoute, Link, notFound, useRouter } from "@tanstack/react-rout
 import { toast } from "sonner";
 import { ArrowLeft, Copy, Download, RefreshCw, Check, Mic, Loader2 } from "lucide-react";
 import RenderBlock from "@/components/studio/RenderBlock";
+import { supabase } from "@/lib/supabase";
 import StatusPill from "@/components/studio/StatusPill";
 import { Image } from "@/components/ui/image";
 import { getVideo, generateVideoKit, generateNarration, markPublished } from "@/lib/video-fns";
@@ -21,6 +22,7 @@ function VideoDetail() {
   const video = Route.useLoaderData();
   const router = useRouter();
   const [busy, setBusy] = useState("");
+  const [publishing, setPublishing] = useState(false);
 
   const run = async (key, action, message) => {
     setBusy(key);
@@ -50,6 +52,14 @@ function VideoDetail() {
 
   const published = video.status === "publicado";
 
+  const publishToTikTok = async () => {
+    setPublishing(true);
+    const { data, error } = await supabase.functions.invoke("tiktok-publish", { body: { videoId: video.id } });
+    setPublishing(false);
+    if (error || data?.error) { toast.error(data?.error || error?.message || "Falha ao publicar no TikTok."); return; }
+    toast.success("Vídeo enviado ao TikTok para processamento.");
+  };
+
   return (
     <div className="mx-auto w-full max-w-5xl px-5 py-8 lg:px-12 lg:py-12">
       <Link to="/videos" className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground">
@@ -70,6 +80,8 @@ function VideoDetail() {
       <div className="mt-10 grid gap-10 lg:grid-cols-[330px_1fr]">
         <div className="lg:sticky lg:top-8 lg:self-start">
           <RenderBlock video={video} />
+
+          {video.mp4_url && <button onClick={publishToTikTok} disabled={publishing} className="mt-3 flex h-11 w-full items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-foreground disabled:opacity-50">{publishing ? "Enviando ao TikTok..." : "Publicar no TikTok"}</button>}
 
           <div className="mt-5 space-y-2">
             {!video.audio_url && video.script && (
