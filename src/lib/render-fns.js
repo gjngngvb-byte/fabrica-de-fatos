@@ -11,7 +11,7 @@ export const startRender = createServerFn({ method: "POST" })
     });
     if (error) throw new Error(error.message || "Não foi possível iniciar a renderização.");
     if (result?.error) throw new Error(result.error);
-    return { jobId: result.jobId, video: result.video };
+    return result;
   });
 
 export const checkRender = createServerFn({ method: "POST" })
@@ -23,5 +23,5 @@ export const checkRender = createServerFn({ method: "POST" })
     });
     if (error) throw new Error(error.message || "Não foi possível consultar a renderização.");
     if (result?.error) throw new Error(result.error);
-    return result.video;
+    return result;
   });
