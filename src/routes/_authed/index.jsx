@@ -5,7 +5,7 @@ import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
 import { Sparkles, ArrowRight, Film, Radio, Repeat } from "lucide-react";
 import SlotCard from "@/components/studio/SlotCard";
-import { ensureTodayPlan, generateVideoKit } from "@/lib/video-fns";
+import { createManualVideo, ensureTodayPlan, generateVideoKit } from "@/lib/video-fns";
 
 export const Route = createFileRoute("/_authed/")({
   head: () => ({ meta: [{ title: "Hoje — Estúdio" }] }),
@@ -28,10 +28,10 @@ function Today() {
   const { videos, studio, today } = Route.useLoaderData();
   const router = useRouter();
   const generate = useServerFn(generateVideoKit);
-  const [sceneCount, setSceneCount] = useState(10);
+  const [sceneCount, setSceneCount] = useState(0);
 
   const mutation = useMutation({
-    mutationFn: ({ videoId, sceneCount }) => generate({ data: { videoId, sceneCount } }),
+    mutationFn: async ({ videoId, sceneCount, manual = false }) => { const target = manual ? await createManualVideo() : { id: videoId }; return generate({ data: { videoId: target.id, sceneCount } }); },
     onSuccess: () => {
       toast.success("Vídeo pronto para gravar.");
       router.invalidate();
@@ -55,7 +55,7 @@ function Today() {
   const recipe = [
     { icon: Film, label: "Formato", value: "Vertical 9:16 · narração" },
     { icon: Radio, label: "Voz", value: `Artificial · ${VOICE_LABELS[studio.voice] || "calma"}` },
-    { icon: Repeat, label: "Ritmo", value: `${studio.videos_per_day} vídeos por dia` },
+    { icon: Repeat, label: "Ritmo", value: `${studio.videos_per_day} vídeos automáticos/dia` },
   ];
 
   return (
@@ -67,25 +67,20 @@ function Today() {
             A fila de <span className="italic text-primary">hoje</span>
           </h1>
           <p className="mt-3 max-w-md text-sm leading-relaxed text-muted-foreground">
-            {studio.niche} viram roteiro, narração e cenas verticais. {studio.videos_per_day} por dia, sem
+            {studio.niche} viram vídeos verticais. A automação prepara a quantidade diária configurada, e você pode gerar quantos quiser manualmente. {studio.videos_per_day} por dia, sem
             você escrever uma linha.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
           <label className="flex h-11 items-center gap-2 rounded-full border border-border px-3 text-xs text-muted-foreground">
-            Cenas
-            <select value={sceneCount} onChange={(event) => setSceneCount(Number(event.target.value))} className="bg-transparent font-medium text-foreground outline-none">
-              <option value={10}>10 (padrão)</option>
-              <option value={3}>3 (compacto)</option>
-            </select>
+            Estilo<select value={sceneCount} onChange={(event) => setSceneCount(Number(event.target.value))} className="bg-transparent font-medium text-foreground outline-none"><option value={0}>Vídeo contínuo (padrão)</option><option value={3}>3 cenas</option></select>
           </label>
           <button
-          onClick={() => (next ? mutation.mutate({ videoId: next.id, sceneCount }) : toast("Todos os roteiros de hoje já foram criados."))}
-          disabled={mutation.isPending || !next}
+          onClick={() => mutation.mutate({ sceneCount, manual: true })} disabled={mutation.isPending}
           className="inline-flex h-11 shrink-0 items-center gap-2 self-start rounded-full bg-primary px-5 text-sm font-medium text-primary-foreground transition-transform hover:-translate-y-0.5 disabled:translate-y-0 disabled:opacity-50 sm:self-auto"
         >
           <Sparkles className={`size-4 ${mutation.isPending ? "animate-pulse" : ""}`} />
-          {mutation.isPending ? "Gerando…" : "Gerar próximo"}
+          {mutation.isPending ? "Gerando…" : "Gerar vídeo"}
           </button>
         </div>
       </header>
