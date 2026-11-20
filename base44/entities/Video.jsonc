@@ -1,0 +1,149 @@
+{
+  "name": "Video",
+  "type": "object",
+  "properties": {
+    "title": {
+      "type": "string"
+    },
+    "hook": {
+      "type": "string"
+    },
+    "fact": {
+      "type": "string"
+    },
+    "script": {
+      "type": "string"
+    },
+    "caption": {
+      "type": "string"
+    },
+    "hashtags": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "scenes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "narration": {
+            "type": "string"
+          },
+          "visual": {
+            "type": "string"
+          },
+          "image_url": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "audio_url": {
+      "type": "string"
+    },
+    "voice": {
+      "type": "string"
+    },
+    "mp4_url": {
+      "type": "string"
+    },
+    "render_job_id": {
+      "type": "string"
+    },
+    "render_status": {
+      "type": "string",
+      "enum": [
+        "ocioso",
+        "renderizando",
+        "pronto",
+        "falhou"
+      ],
+      "enumColors": [
+        "gray",
+        "yellow",
+        "green",
+        "red"
+      ],
+      "default": "ocioso"
+    },
+    "render_error": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "planejado",
+        "roteiro",
+        "pronto",
+        "publicado",
+        "falhou"
+      ],
+      "enumColors": [
+        "gray",
+        "yellow",
+        "green",
+        "blue",
+        "red"
+      ],
+      "default": "planejado"
+    },
+    "scheduled_date": {
+      "type": "string"
+    },
+    "slot": {
+      "type": "number"
+    },
+    "published_at": {
+      "type": "string"
+    },
+    "error": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "status"
+  ],
+  "rls": {
+    "read": {
+      "$or": [
+        {
+          "created_by_id": "{{user.id}}"
+        },
+        {
+          "user_condition": {
+            "role": "admin"
+          }
+        }
+      ]
+    },
+    "create": {
+      "created_by_id": "{{user.id}}"
+    },
+    "update": {
+      "$or": [
+        {
+          "created_by_id": "{{user.id}}"
+        },
+        {
+          "user_condition": {
+            "role": "admin"
+          }
+        }
+      ]
+    },
+    "delete": {
+      "$or": [
+        {
+          "created_by_id": "{{user.id}}"
+        },
+        {
+          "user_condition": {
+            "role": "admin"
+          }
+        }
+      ]
+    }
+  }
+}
