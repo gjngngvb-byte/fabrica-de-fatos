@@ -27,11 +27,11 @@ function Metric({ value, label, accent }) {
 function Today() {
   const { videos, studio, today } = Route.useLoaderData();
   const router = useRouter();
-  const generate = useServerFn(generateVideoKit);
+  const generate = useServerFn(generateVideoKit);\n  const createManual = useServerFn(createManualVideo);
   const [sceneCount, setSceneCount] = useState(0);
 
   const mutation = useMutation({
-    mutationFn: async ({ videoId, sceneCount, manual = false }) => { const target = manual ? await createManualVideo() : { id: videoId }; return generate({ data: { videoId: target.id, sceneCount } }); },
+    mutationFn: async ({ videoId, sceneCount, manual = false }) => { const target = manual ? await createManual() : { id: videoId }; return generate({ data: { videoId: target.id, sceneCount } }); },
     onSuccess: () => {
       toast.success("Vídeo pronto para gravar.");
       router.invalidate();
