@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
@@ -26,6 +26,7 @@ export default function RenderBlock({ video }) {
     detail: "",
   });
   const [busy, setBusy] = useState(false);
+  const autoStarted = useRef(false);
   const [downloading, setDownloading] = useState(false);
 
   const rendering = render.status === "renderizando" || render.status === "ajustando_proporcao" || render.status === "finalizando_arquivo";
@@ -89,6 +90,15 @@ export default function RenderBlock({ video }) {
     }
   };
 
+  useEffect(() => {
+    // Segurança adicional: se um vídeo com roteiro chegar sem render iniciada,
+    // dispara a criação do MP4 automaticamente ao abrir seus detalhes.
+    if (autoStarted.current || !video.script || video.mp4_url || rendering || busy) return;
+    if (render.status !== "ocioso" && render.status !== "falhou") return;
+    autoStarted.current = true;
+    build();
+  }, [video.id, video.script, video.mp4_url, render.status, rendering, busy]);
+
   const downloadMp4 = async () => {
     if (!render.url) return;
     setDownloading(true);
@@ -151,14 +161,10 @@ export default function RenderBlock({ video }) {
     <div>
       <PhonePlayer scenes={video.scenes || []} audioUrl={video.audio_url} title={video.title} />
       <div className="mt-5 space-y-3">
-        <button
-          onClick={build}
-          disabled={busy || rendering || !video.script}
-          className="flex h-11 w-full items-center justify-center gap-2 rounded-full bg-primary text-xs font-semibold text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-40"
-        >
-          {busy || rendering ? <Loader2 className="size-4 animate-spin" /> : <Film className="size-4" />}
-          {render.status === "ajustando_proporcao" ? "Ajustando formato 9:16…" : render.status === "finalizando_arquivo" ? "Preparando arquivo MP4…" : rendering ? "Gerando vídeo…" : busy ? "Iniciando…" : "Criar vídeo MP4"}
-        </button>
+        <div className="flex h-11 w-full items-center justify-center gap-2 rounded-full border border-border bg-card/50 text-xs font-semibold text-muted-foreground">
+          {busy || rendering ? <Loader2 className="size-4 animate-spin" /> : render.status === "falhou" ? <AlertCircle className="size-4" /> : <Film className="size-4" />}
+          {render.status === "ajustando_proporcao" ? "Ajustando formato 9:16…" : render.status === "finalizando_arquivo" ? "Preparando arquivo MP4…" : rendering || busy ? "Gerando MP4 automaticamente…" : render.status === "falhou" ? "Falha ao gerar MP4 automaticamente" : "Preparando geração automática…"}
+        </div>
 
         {rendering && (
           <div className="rounded-xl border border-border bg-card/60 p-3">
