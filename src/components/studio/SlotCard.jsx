@@ -18,7 +18,7 @@ export default function SlotCard({ video, index, onGenerate, busy, style }) {
         <span className="font-mono text-[11px] tracking-[0.2em] text-muted-foreground">
           {String(index + 1).padStart(2, "0")}
         </span>
-        <StatusPill status={video?.status || "planejado"} />
+        <StatusPill status={video?.status === "pronto" && !video?.mp4_url ? "roteiro" : video?.status || "planejado"} />
       </div>
 
       <div className="mt-6 min-h-[92px]">
