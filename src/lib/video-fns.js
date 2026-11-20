@@ -82,14 +82,14 @@ export const getStudio = createServerFn({ method: "POST" })
 
 export const generateVideoKit = createServerFn({ method: "POST" })
   .middleware([requireUser])
-  .validator(z.object({ videoId: z.string().uuid() }))
+  .validator(z.object({ videoId: z.string().uuid(), sceneCount: z.union([z.literal(3), z.literal(10)]).optional().default(10) }))
   .handler(async ({ data, context }) => {
     const supabase = context.getSupabase();
     const { data: video, error: lookupError } = await supabase.from("videos").select("id")
       .eq("id", data.videoId).eq("created_by", context.user.id).single();
     if (lookupError || !video) throw new Error("Vídeo não encontrado.");
     const { data: result, error } = await supabase.functions.invoke("generate-video-kit", {
-      body: { videoId: data.videoId, action: "generate" },
+      body: { videoId: data.videoId, action: "generate", sceneCount: data.sceneCount },
     });
     if (error) throw new Error(error.message || "Falha ao gerar o vídeo.");
     if (result?.error) throw new Error(result.error);
