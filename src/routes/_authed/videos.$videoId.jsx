@@ -1,12 +1,12 @@
 import { useState } from "react";
 import { createFileRoute, Link, notFound, useRouter } from "@tanstack/react-router";
 import { toast } from "sonner";
-import { ArrowLeft, Copy, Download, RefreshCw, Check, Mic, Loader2 } from "lucide-react";
+import { ArrowLeft, Copy, Download, RefreshCw, Check, Loader2 } from "lucide-react";
 import RenderBlock from "@/components/studio/RenderBlock";
 import { supabase } from "@/lib/supabase";
 import StatusPill from "@/components/studio/StatusPill";
 import { Image } from "@/components/ui/image";
-import { getVideo, generateVideoKit, generateNarration, markPublished } from "@/lib/video-fns";
+import { getVideo, generateVideoKit, markPublished } from "@/lib/video-fns";
 
 export const Route = createFileRoute("/_authed/videos/$videoId")({
   head: () => ({ meta: [{ title: "Vídeo — Estúdio" }] }),
@@ -84,17 +84,6 @@ function VideoDetail() {
           {video.mp4_url && <button onClick={publishToTikTok} disabled={publishing} className="mt-3 flex h-11 w-full items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-foreground disabled:opacity-50">{publishing ? "Enviando ao TikTok..." : "Publicar no TikTok"}</button>}
 
           <div className="mt-5 space-y-2">
-            {!video.audio_url && video.script && (
-              <button
-                onClick={() => run("audio", () => generateNarration({ data: { videoId: video.id } }), "Narração gerada.")}
-                disabled={!!busy}
-                className="flex h-10 w-full items-center justify-center gap-2 rounded-full border border-primary/40 bg-primary/10 text-xs font-medium text-primary transition-colors hover:bg-primary/15 disabled:opacity-50"
-              >
-                {busy === "audio" ? <Loader2 className="size-3.5 animate-spin" /> : <Mic className="size-3.5" />}
-                {busy === "audio" ? "Gerando narração" : "Gerar narração"}
-              </button>
-            )}
-
             <button
               onClick={() => run("publish", () => markPublished({ data: { videoId: video.id, published: !published } }), published ? "Marcado como pronto." : "Marcado como publicado.")}
               disabled={!!busy || !video.title}
