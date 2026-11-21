@@ -18,7 +18,7 @@ export default function RenderBlock({ video }) {
   const createScript = useServerFn(generateVideoKit);
   const createScene = useServerFn(generateSceneAsset);
   const finalizeAssets = useServerFn(finalizeVideoAssets);
-  const legacyShort = /12s|Agnes AI|Gemini/i.test(video.render_error || "");
+  const legacyShort = /12s|Agnes AI|Gemini Video/i.test(video.render_error || "");
   const initialUrl = legacyShort ? "" : (video.mp4_url || "");
   const [render, setRender] = useState({
     status: initialUrl ? "pronto" : (video.render_status || "ocioso"),
