@@ -1,6 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
-import { requireUser } from "@/lib/auth-middleware";
+import { requireUser, authMiddleware } from "@/lib/auth-middleware";
 
 const DEFAULT_STUDIO = {
   niche: "Fatos surpreendentes",
