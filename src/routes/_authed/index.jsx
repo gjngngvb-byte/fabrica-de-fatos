@@ -5,7 +5,7 @@ import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
 import { Sparkles, ArrowRight, Film, Radio, Repeat } from "lucide-react";
 import SlotCard from "@/components/studio/SlotCard";
-import { createManualVideo, ensureTodayPlan, generateVideoKit } from "@/lib/video-fns";
+import { createManualVideo, ensureTodayPlan, generateVideoKit, deleteVideo } from "@/lib/video-fns";
 
 export const Route = createFileRoute("/_authed/")({
   head: () => ({ meta: [{ title: "Hoje — Estúdio" }] }),
@@ -29,6 +29,14 @@ function Today() {
   const router = useRouter();
   const generate = useServerFn(generateVideoKit);
   const createManual = useServerFn(createManualVideo);
+  const removeVideo = useServerFn(deleteVideo);
+  const handleDelete = async (video) => {
+    try {
+      await removeVideo({ data: { videoId: video.id } });
+      await router.invalidate();
+      toast.success("Vídeo e arquivos associados excluídos permanentemente.");
+    } catch (error) { toast.error(error?.message || "Não foi possível excluir o vídeo."); throw error; }
+  };
 
   const mutation = useMutation({
     mutationFn: async ({ videoId, manual = false }) => { const target = manual ? await createManual() : { id: videoId }; return generate({ data: { videoId: target.id } }); },
@@ -102,6 +110,7 @@ function Today() {
                 video={video}
                 index={i}
                 onGenerate={(v) => mutation.mutate({ videoId: v.id })}
+                onDelete={handleDelete}
                 busy={mutation.isPending && mutation.variables?.videoId === video.id}
                 style={{ animationDelay: `${i * 60}ms` }}
               />
