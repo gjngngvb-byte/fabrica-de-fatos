@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { Download, Film, Loader2, CheckCircle2, AlertCircle, RefreshCw } from "lucide-react";
 import PhonePlayer from "@/components/studio/PhonePlayer";
 import { generateVideoKit } from "@/lib/video-fns";
-import { generateSceneAsset, finalizeVideoAssets } from "@/lib/render-fns";
+import { generateSceneImage, generateSceneSpeech, finalizeVideoAssets } from "@/lib/render-fns";
 import { recordNarratedSlideshow, convertWebmToMp4 } from "@/lib/video-composer";
 import { supabase } from "@/lib/supabase";
 
@@ -49,52 +49,40 @@ export default function RenderBlock({ video }) {
 
       let scenes = [...(currentVideo.scenes || [])];
       const total = scenes.length;
-      let lastGeminiRequestAt = 0;
+
+      // FASE 1: gerar e salvar TODAS as imagens, uma por vez.
       for (let i = 0; i < total; i++) {
-        const existing = scenes[i];
-        if (existing.image_url && existing.audio_path && Number(existing.audio_duration) > 0) {
-          setRender({ status: "renderizando", url: "", error: "", progress: 5 + Math.round(((i + 1) / total) * 48), detail: "Cena " + (i + 1) + " de " + total + " já está pronta." });
+        if (scenes[i].image_url && scenes[i].image_path) {
+          setRender({ status: "renderizando", url: "", error: "", progress: 5 + Math.round(((i + 1) / total) * 35), detail: "Imagem " + (i + 1) + " de " + total + " já está pronta." });
           continue;
         }
         setRender({
           status: "renderizando", url: "", error: "",
-          progress: 5 + Math.round((i / total) * 48),
-          detail: "Gerando imagem e voz da cena " + (i + 1) + " de " + total + ".",
+          progress: 5 + Math.round((i / total) * 35),
+          detail: "FASE 1/4 · Gerando imagem " + (i + 1) + " de " + total + ".",
         });
-        // Gemini TTS Free Tier allows only 3 requests per minute. Keep a 22s gap.
-        const elapsed = Date.now() - lastGeminiRequestAt;
-        if (lastGeminiRequestAt && elapsed < 22000) {
-          const waitMs = 22000 - elapsed;
-          setRender({
-            status: "renderizando", url: "", error: "",
-            progress: 5 + Math.round((i / total) * 48),
-            detail: "Respeitando o limite gratuito do Gemini. Próxima cena em " + Math.ceil(waitMs / 1000) + "s.",
-          });
-          await sleep(waitMs);
-        }
-        lastGeminiRequestAt = Date.now();
-        let result;
-        try {
-          result = await createScene({ data: { videoId: video.id, sceneIndex: i } });
-        } catch (sceneError) {
-          const message = String(sceneError?.message || sceneError);
-          if (!/429|quota exceeded|rate limit/i.test(message)) throw sceneError;
-          const retryMatch = message.match(/retry in ([0-9.]+)s/i);
-          const retryMs = Math.ceil((retryMatch ? Number(retryMatch[1]) : 40) * 1000) + 2000;
-          setRender({
-            status: "renderizando", url: "", error: "",
-            progress: 5 + Math.round((i / total) * 48),
-            detail: "O Gemini pediu uma pausa por limite de uso. Retomando em " + Math.ceil(retryMs / 1000) + "s.",
-          });
-          await sleep(retryMs);
-          lastGeminiRequestAt = Date.now();
-          result = await createScene({ data: { videoId: video.id, sceneIndex: i } });
-        }
+        const result = await generateSceneImage({ data: { videoId: video.id, sceneIndex: i } });
         if (result?.video?.scenes) scenes = result.video.scenes;
         else if (result?.scene) scenes[i] = result.scene;
       }
 
-      setRender({ status: "renderizando", url: "", error: "", progress: 57, detail: "Unindo os trechos de voz e calculando as legendas sincronizadas." });
+      // FASE 2: somente depois de TODAS as imagens, gerar as narrações.
+      for (let i = 0; i < total; i++) {
+        if (scenes[i].audio_path && Number(scenes[i].audio_duration) > 0) {
+          setRender({ status: "renderizando", url: "", error: "", progress: 40 + Math.round(((i + 1) / total) * 25), detail: "Narração " + (i + 1) + " de " + total + " já está pronta." });
+          continue;
+        }
+        setRender({
+          status: "renderizando", url: "", error: "",
+          progress: 40 + Math.round((i / total) * 25),
+          detail: "FASE 2/4 · Gerando narração " + (i + 1) + " de " + total + ".",
+        });
+        const result = await generateSceneSpeech({ data: { videoId: video.id, sceneIndex: i } });
+        if (result?.video?.scenes) scenes = result.video.scenes;
+        else if (result?.scene) scenes[i] = result.scene;
+      }
+
+      setRender({ status: "renderizando", url: "", error: "", progress: 67, detail: "FASE 3/4 · Configurando legendas e sincronizando os tempos da narração." });
       const finalized = await finalizeAssets({ data: { videoId: video.id } });
       currentVideo = finalized?.video;
       if (!currentVideo?.audio_url || !currentVideo?.scenes?.length) throw new Error("Não foi possível finalizar a narração e as legendas.");
@@ -102,7 +90,7 @@ export default function RenderBlock({ video }) {
       const webm = await recordNarratedSlideshow(currentVideo, (progress, detail) => {
         setRender({ status: "renderizando", url: "", error: "", progress, detail });
       });
-      setRender({ status: "renderizando", url: "", error: "", progress: 76, detail: "Convertendo a gravação para MP4." });
+      setRender({ status: "renderizando", url: "", error: "", progress: 78, detail: "FASE 4/4 · Sincronizando imagens, legendas e narração e convertendo para MP4." });
       const mp4 = await convertWebmToMp4(webm, (progress, detail) => {
         setRender({ status: "renderizando", url: "", error: "", progress, detail });
       });
@@ -123,7 +111,7 @@ export default function RenderBlock({ video }) {
       const { data: updated, error: updateError } = await supabase.from("videos").update({
         mp4_url: signed.signedUrl,
         render_status: "pronto",
-        render_error: "Longform MP4 | " + Math.round(duration) + "s | FLUX + Gemini TTS",
+        render_error: "Longform MP4 | " + Math.round(duration) + "s | imagens + Edge TTS + legendas sincronizadas",
         status: "pronto",
         error: "",
       }).eq("id", video.id).eq("created_by", authData.user.id).select("*").single();
