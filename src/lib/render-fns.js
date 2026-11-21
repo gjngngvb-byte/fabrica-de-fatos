@@ -1,5 +1,14 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
+import { authMiddleware } from "@/lib/auth-middleware";
+
+async function requireContextUser(context) {
+  const supabase = context.getSupabase?.();
+  if (!supabase || !context.accessToken) throw new Error("Sessão não disponível. Entre novamente.");
+  const { data, error } = await supabase.auth.getUser(context.accessToken);
+  if (error || !data.user) throw new Error("Sessão inválida. Entre novamente.");
+  return { supabase, user: data.user };
+}
 
 async function invokeMessage(error, fallback) {
   try {
@@ -12,10 +21,13 @@ async function invokeMessage(error, fallback) {
 
 function assetAction(action, fallback) {
   return createServerFn({ method: "POST" })
+    .middleware([authMiddleware])
     .validator(z.object({ videoId: z.string().uuid(), sceneIndex: z.number().int().min(0).max(30) }))
-    .handler(async ({ data }) => {
-      const { getAuthenticatedSupabase } = await import("./authenticated-supabase.server");
-      const { supabase } = await getAuthenticatedSupabase();
+    .handler(async ({ data, context }) => {
+      const { supabase, user } = await requireContextUser(context);
+      const { data: owned, error: lookupError } = await supabase.from("videos").select("id")
+        .eq("id", data.videoId).eq("created_by", user.id).maybeSingle();
+      if (lookupError || !owned) throw new Error("Vídeo não encontrado.");
       const { data: result, error } = await supabase.functions.invoke("generate-video-kit", {
         body: { videoId: data.videoId, action, sceneIndex: data.sceneIndex },
       });
@@ -29,10 +41,13 @@ export const generateSceneImage = assetAction("image_asset", "Falha ao gerar ima
 export const generateSceneSpeech = assetAction("speech_asset", "Falha ao gerar narração.");
 
 export const finalizeVideoAssets = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
   .validator(z.object({ videoId: z.string().uuid() }))
-  .handler(async ({ data }) => {
-    const { getAuthenticatedSupabase } = await import("./authenticated-supabase.server");
-    const { supabase } = await getAuthenticatedSupabase();
+  .handler(async ({ data, context }) => {
+    const { supabase, user } = await requireContextUser(context);
+    const { data: owned, error: lookupError } = await supabase.from("videos").select("id")
+      .eq("id", data.videoId).eq("created_by", user.id).maybeSingle();
+    if (lookupError || !owned) throw new Error("Vídeo não encontrado.");
     const { data: result, error } = await supabase.functions.invoke("generate-video-kit", {
       body: { videoId: data.videoId, action: "finalize_assets" },
     });
