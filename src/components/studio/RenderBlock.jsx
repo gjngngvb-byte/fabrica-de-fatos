@@ -9,8 +9,6 @@ import { generateSceneImage, generateSceneSpeech, finalizeVideoAssets } from "@/
 import { recordNarratedSlideshow, convertWebmToMp4 } from "@/lib/video-composer";
 import { supabase } from "@/lib/supabase";
 
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-
 function safeFilename(value) {
   return String(value || "fabrica-de-fatos").replace(/[^a-z0-9-_]+/gi, "-").slice(0, 70);
 }
@@ -18,7 +16,8 @@ function safeFilename(value) {
 export default function RenderBlock({ video }) {
   const router = useRouter();
   const createScript = useServerFn(generateVideoKit);
-  const createScene = useServerFn(generateSceneAsset);
+  const createImage = useServerFn(generateSceneImage);
+  const createSpeech = useServerFn(generateSceneSpeech);
   const finalizeAssets = useServerFn(finalizeVideoAssets);
   const legacyShort = /12s|Agnes AI|Gemini Video/i.test(video.render_error || "");
   const initialUrl = legacyShort ? "" : (video.mp4_url || "");
@@ -61,7 +60,7 @@ export default function RenderBlock({ video }) {
           progress: 5 + Math.round((i / total) * 35),
           detail: "FASE 1/4 · Gerando imagem " + (i + 1) + " de " + total + ".",
         });
-        const result = await generateSceneImage({ data: { videoId: video.id, sceneIndex: i } });
+        const result = await createImage({ data: { videoId: video.id, sceneIndex: i } });
         if (result?.video?.scenes) scenes = result.video.scenes;
         else if (result?.scene) scenes[i] = result.scene;
       }
@@ -77,7 +76,7 @@ export default function RenderBlock({ video }) {
           progress: 40 + Math.round((i / total) * 25),
           detail: "FASE 2/4 · Gerando narração " + (i + 1) + " de " + total + ".",
         });
-        const result = await generateSceneSpeech({ data: { videoId: video.id, sceneIndex: i } });
+        const result = await createSpeech({ data: { videoId: video.id, sceneIndex: i } });
         if (result?.video?.scenes) scenes = result.video.scenes;
         else if (result?.scene) scenes[i] = result.scene;
       }
