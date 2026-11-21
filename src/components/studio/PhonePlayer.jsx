@@ -94,7 +94,7 @@ export default function PhonePlayer({ scenes = [], audioUrl, title }) {
         {playing ? <Pause className="size-5" /> : <Play className="ml-0.5 size-5" />}
       </button>
 
-      {audioUrl && <audio ref={audioRef} src={audioUrl} preload="metadata" onTimeUpdate={onTime} onEnded={() => setPlaying(false)} />}
+      {audioUrl && <audio ref={audioRef} src={audioUrl} preload="none" onTimeUpdate={onTime} onEnded={() => setPlaying(false)} />}
     </div>
   );
 }
