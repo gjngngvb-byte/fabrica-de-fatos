@@ -30,6 +30,7 @@ export default function RenderBlock({ video }) {
   });
   const [busy, setBusy] = useState(false);
   const [downloading, setDownloading] = useState(false);
+  const [previewScenes, setPreviewScenes] = useState(video.scenes || []);
   const started = useRef(false);
 
   const build = async () => {
@@ -47,38 +48,44 @@ export default function RenderBlock({ video }) {
       }
 
       let scenes = [...(currentVideo.scenes || [])];
+      setPreviewScenes(scenes);
       const total = scenes.length;
 
       // FASE 1: gerar e salvar TODAS as imagens, uma por vez.
       for (let i = 0; i < total; i++) {
         if (scenes[i].image_url && scenes[i].image_path) {
-          setRender({ status: "renderizando", url: "", error: "", progress: 5 + Math.round(((i + 1) / total) * 35), detail: "Imagem " + (i + 1) + " de " + total + " já está pronta." });
+          setPreviewScenes([...scenes]);
+          setRender({ status: "renderizando", url: "", error: "", progress: 5 + Math.round(((i + 1) / total) * 35), detail: "Imagem " + (i + 1) + "/" + total + " já criada." });
           continue;
         }
         setRender({
           status: "renderizando", url: "", error: "",
           progress: 5 + Math.round((i / total) * 35),
-          detail: "FASE 1/4 · Gerando imagem " + (i + 1) + " de " + total + ".",
+          detail: "FASE 1/4 · Gerando imagem " + (i + 1) + "/" + total + " · " + Math.round((i / total) * 100) + "% da etapa concluída.",
         });
         const result = await createImage({ data: { videoId: video.id, sceneIndex: i } });
         if (result?.video?.scenes) scenes = result.video.scenes;
         else if (result?.scene) scenes[i] = result.scene;
+        setPreviewScenes([...scenes]);
+        setRender({ status: "renderizando", url: "", error: "", progress: 5 + Math.round(((i + 1) / total) * 35), detail: "Imagem " + (i + 1) + "/" + total + " criada com sucesso." });
       }
 
       // FASE 2: somente depois de TODAS as imagens, gerar as narrações.
       for (let i = 0; i < total; i++) {
         if (scenes[i].audio_path && Number(scenes[i].audio_duration) > 0) {
-          setRender({ status: "renderizando", url: "", error: "", progress: 40 + Math.round(((i + 1) / total) * 25), detail: "Narração " + (i + 1) + " de " + total + " já está pronta." });
+          setRender({ status: "renderizando", url: "", error: "", progress: 40 + Math.round(((i + 1) / total) * 25), detail: "Narração " + (i + 1) + "/" + total + " já concluída · " + Math.round(((i + 1) / total) * 100) + "% da etapa." });
           continue;
         }
         setRender({
           status: "renderizando", url: "", error: "",
           progress: 40 + Math.round((i / total) * 25),
-          detail: "FASE 2/4 · Gerando narração " + (i + 1) + " de " + total + ".",
+          detail: "FASE 2/4 · Gerando narração " + (i + 1) + "/" + total + " · " + Math.round((i / total) * 100) + "% da etapa concluída.",
         });
         const result = await createSpeech({ data: { videoId: video.id, sceneIndex: i } });
         if (result?.video?.scenes) scenes = result.video.scenes;
         else if (result?.scene) scenes[i] = result.scene;
+        setPreviewScenes([...scenes]);
+        setRender({ status: "renderizando", url: "", error: "", progress: 40 + Math.round(((i + 1) / total) * 25), detail: "Narração " + (i + 1) + "/" + total + " concluída · " + Math.round(((i + 1) / total) * 100) + "% da etapa." });
       }
 
       setRender({ status: "renderizando", url: "", error: "", progress: 67, detail: "FASE 3/4 · Configurando legendas e sincronizando os tempos da narração." });
@@ -197,7 +204,26 @@ export default function RenderBlock({ video }) {
 
   return (
     <div>
-      <PhonePlayer scenes={video.scenes || []} audioUrl={video.audio_url} title={video.title} />
+      <PhonePlayer scenes={previewScenes} audioUrl={video.audio_url} title={video.title} />
+      <div className="mt-3 rounded-xl border border-border bg-card/50 p-3">
+        <div className="mb-2 flex items-center justify-between text-[11px]">
+          <span className="font-semibold text-foreground">Prévia das cenas</span>
+          <span className="text-muted-foreground">{previewScenes.filter((scene) => scene.image_url).length}/{previewScenes.length} imagens</span>
+        </div>
+        <div className="grid grid-cols-5 gap-2">
+          {previewScenes.map((scene, index) => (
+            <div key={scene.id || index} className="relative aspect-[3/4] overflow-hidden rounded-md bg-secondary">
+              {scene.image_url ? (
+                <img src={scene.image_url} alt={"Cena " + (index + 1)} className="size-full object-cover" />
+              ) : (
+                <div className="grid size-full place-items-center text-[10px] text-muted-foreground">Aguardando</div>
+              )}
+              <span className="absolute bottom-0 inset-x-0 bg-black/65 py-0.5 text-center text-[9px] text-white">{index + 1}</span>
+            </div>
+          ))}
+        </div>
+        <p className="mt-2 text-[10px] text-muted-foreground">{previewScenes.filter((scene) => scene.audio_path).length}/{previewScenes.length} narrações prontas</p>
+      </div>
       <div className="mt-5 space-y-3">
         <div className="flex h-11 w-full items-center justify-center gap-2 rounded-full border border-border bg-card/50 text-xs font-semibold text-muted-foreground">
           {busy ? <Loader2 className="size-4 animate-spin" /> : render.status === "falhou" ? <AlertCircle className="size-4" /> : <Film className="size-4" />}
