@@ -51,5 +51,5 @@ export const requireUserRoute = createMiddleware({ type: "request" }).server(asy
   if (!context.accessToken) return Response.json({ error: "Unauthorized" }, { status: 401 });
   const { data, error } = await context.getSupabase().auth.getUser(context.accessToken);
   if (error || !data.user) return Response.json({ error: "Unauthorized" }, { status: 401 });
-  return next({ context: { user: data.user } });
+  return next({ context: { ...context, user: data.user } });
 });
