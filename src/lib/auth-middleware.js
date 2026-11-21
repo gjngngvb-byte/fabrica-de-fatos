@@ -29,7 +29,7 @@ export const supabaseRequestMiddleware = createMiddleware({ type: "request" }).s
 });
 
 export const requireUser = createMiddleware({ type: "function" }).server(async ({ next, context }) => {
-  const auth = await getAuthenticatedContext(context);
+  const auth = await resolveAuthenticatedContext(context);
   return next({ context: { ...(context || {}), getSupabase: () => auth.supabase, accessToken: auth.accessToken, user: auth.user } });
 });
 
