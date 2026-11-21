@@ -1,32 +1,16 @@
 import { createClient } from "@supabase/supabase-js";
-import { createMiddleware } from "@tanstack/react-start";
+import { createMiddleware, createServerOnlyFn } from "@tanstack/react-start";
 
 const getConfig = () => ({
   url: import.meta.env.VITE_SUPABASE_URL,
   key: import.meta.env.VITE_SUPABASE_ANON_KEY,
 });
 
-// The server-only wrapper keeps request APIs and the server module out of the browser bundle.
-export async function getAuthenticatedContext(context = {}) {
-  const { getRequest, setResponseStatus } = await import("@tanstack/react-start/server");
-  const request = getRequest();
-  const token = context?.accessToken || request.headers.get("authorization")?.replace(/^Bearer\s+/i, "") || null;
-  if (!token) {
-    setResponseStatus(401);
-    throw Object.assign(new Error("Faça login para continuar."), { status: 401, code: "UNAUTHORIZED" });
-  }
-  const { url, key } = getConfig();
-  const supabase = typeof context?.getSupabase === "function" ? context.getSupabase() : createClient(url, key, {
-    auth: { persistSession: false, autoRefreshToken: false },
-    global: { headers: { Authorization: `Bearer ${token}` } },
-  });
-  const { data, error } = await supabase.auth.getUser(token);
-  if (error || !data.user) {
-    setResponseStatus(401);
-    throw Object.assign(new Error("Sessão inválida. Entre novamente."), { status: 401, code: "UNAUTHORIZED" });
-  }
-  return { supabase, user: data.user, accessToken: token };
-}
+// Keep the server module behind TanStack's server-only boundary.
+export const getAuthenticatedContext = createServerOnlyFn(async (context = {}) => {
+  const { getAuthenticatedContext: resolveContext } = await import("@/lib/auth-context.server");
+  return resolveContext(context);
+});
 
 export const authMiddleware = createMiddleware({ type: "function" })
   .client(async ({ next }) => {
