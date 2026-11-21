@@ -1,6 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
-import { requireUser, getAuthenticatedContext } from "@/lib/auth-middleware";
+import { requireUser } from "@/lib/auth-middleware";
 
 async function edgeFunctionMessage(error, fallback) {
   try {
@@ -44,7 +44,7 @@ async function loadStudio(supabase, userId) {
 export const ensureTodayPlan = createServerFn({ method: "POST" })
   .middleware([requireUser])
   .handler(async ({ context }) => {
-    const auth = await getAuthenticatedContext(context);
+    const auth = { supabase: context.getSupabase(), user: context.user };
     const supabase = auth.supabase;
     const studio = await loadStudio(supabase, auth.user.id);
     const today = new Date().toISOString().slice(0, 10);
