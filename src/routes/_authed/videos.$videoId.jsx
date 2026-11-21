@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useServerFn } from "@tanstack/react-start";
 import { createFileRoute, Link, notFound, useRouter } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { ArrowLeft, Copy, Download, RefreshCw, Check, Loader2 } from "lucide-react";
@@ -6,7 +7,7 @@ import RenderBlock from "@/components/studio/RenderBlock";
 import { supabase } from "@/lib/supabase";
 import StatusPill from "@/components/studio/StatusPill";
 import { Image } from "@/components/ui/image";
-import { getVideo, generateVideoKit, markPublished } from "@/lib/video-fns";
+import { getVideo, createManualVideo, markPublished } from "@/lib/video-fns";
 
 export const Route = createFileRoute("/_authed/videos/$videoId")({
   head: () => ({ meta: [{ title: "Vídeo — Estúdio" }] }),
@@ -21,6 +22,7 @@ export const Route = createFileRoute("/_authed/videos/$videoId")({
 function VideoDetail() {
   const video = Route.useLoaderData();
   const router = useRouter();
+  const createManual = useServerFn(createManualVideo);
   const [busy, setBusy] = useState("");
   const [publishing, setPublishing] = useState(false);
 
@@ -94,7 +96,7 @@ function VideoDetail() {
             </button>
 
             <button
-              onClick={() => run("regen", () => generateVideoKit({ data: { videoId: video.id } }), "Novo vídeo gerado.")}
+              onClick={() => run("regen", async () => { const next = await createManual(); await router.navigate({ to: "/videos/$videoId", params: { videoId: next.id } }); }, "Nova produção iniciada.")}
               disabled={!!busy}
               className="flex h-10 w-full items-center justify-center gap-2 rounded-full border border-border text-xs text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
             >
