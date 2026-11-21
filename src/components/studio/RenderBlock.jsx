@@ -234,6 +234,13 @@ export default function RenderBlock({ video }) {
   return (
     <div>
       <PhonePlayer scenes={previewScenes} audioUrl={activeVideo?.audio_url || video.audio_url} title={activeVideo?.title || video.title} />
+      {activeVideo?.title && (
+        <div className="mt-3 rounded-xl border border-border bg-card/50 p-3">
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-primary">Tema escolhido</p>
+          <p className="mt-1 text-sm font-medium text-foreground">{activeVideo.title}</p>
+          {activeVideo.script && <p className="mt-2 line-clamp-4 text-[11px] leading-relaxed text-muted-foreground">{activeVideo.script}</p>}
+        </div>
+      )}
       <div className="mt-3 rounded-xl border border-border bg-card/50 p-3">
         <div className="mb-2 flex items-center justify-between text-[11px]">
           <span className="font-semibold text-foreground">Prévia das 15 cenas</span>
