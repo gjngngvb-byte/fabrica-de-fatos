@@ -81,30 +81,44 @@ export const deleteVideo = createServerFn({ method: "POST" })
   .middleware([requireUser])
   .validator(z.object({ videoId: z.string().uuid() }))
   .handler(async ({ data, context }) => {
-    const auth = { supabase: context.getSupabase(), user: context.user };
-    const supabase = auth.supabase;
-    const userId = auth.user.id;
+    const supabase = context.getSupabase();
+    const userId = context.user.id;
     const { data: video, error: lookupError } = await supabase.from("videos").select("*")
       .eq("id", data.videoId).eq("created_by", userId).maybeSingle();
     if (lookupError) throw lookupError;
     if (!video) throw new Error("Vídeo não encontrado ou já excluído.");
 
-    const paths = new Set([userId + "/" + video.id + ".mp4", userId + "/" + video.id + "-narration-full.wav"]);
+    const paths = new Set([
+      userId + "/" + video.id + ".mp4",
+      userId + "/" + video.id + "-narration-full.wav",
+    ]);
     for (const scene of (Array.isArray(video.scenes) ? video.scenes : [])) {
       if (scene.image_path && String(scene.image_path).startsWith(userId + "/")) paths.add(scene.image_path);
       if (scene.audio_path && String(scene.audio_path).startsWith(userId + "/")) paths.add(scene.audio_path);
     }
+
+    // Also discover files left behind by interrupted renders, even if their
+    // paths were not persisted in the video's scene JSON.
+    const { data: storedFiles, error: listError } = await supabase.storage.from("assets")
+      .list(userId, { limit: 1000 });
+    if (listError) throw new Error("Não foi possível localizar os arquivos do vídeo: " + listError.message);
+    for (const file of storedFiles || []) {
+      if (file.name === video.id + ".mp4" || file.name.startsWith(video.id + "-")) {
+        paths.add(userId + "/" + file.name);
+      }
+    }
+
     const { error: storageError } = await supabase.storage.from("assets").remove([...paths]);
     if (storageError) throw new Error("Não foi possível apagar os arquivos do vídeo: " + storageError.message);
 
-    const { error: publicationError } = await supabase.from("tiktok_publications").delete()
-      .eq("video_id", video.id);
-    if (publicationError && publicationError.code !== "42P01") throw publicationError;
-
-    const { error: deleteError } = await supabase.from("videos").delete()
-      .eq("id", video.id).eq("created_by", userId);
+    // tiktok_publications has ON DELETE CASCADE, so deleting the owned video
+    // removes its publication records in the same database operation.
+    const { data: deleted, error: deleteError } = await supabase.from("videos").delete()
+      .eq("id", video.id).eq("created_by", userId).select("id").maybeSingle();
     if (deleteError) throw deleteError;
-    return { success: true, deletedId: video.id, filesRemoved: paths.size };
+    if (!deleted?.id) throw new Error("O banco não confirmou a exclusão do vídeo. Atualize a página e tente novamente.");
+
+    return { success: true, deletedId: deleted.id, filesRemoved: paths.size };
   });
 
 export const getStudio = createServerFn({ method: "POST" })
