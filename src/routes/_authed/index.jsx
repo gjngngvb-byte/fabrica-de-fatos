@@ -32,9 +32,10 @@ function Today() {
 
   const mutation = useMutation({
     mutationFn: async ({ videoId, manual = false }) => { const target = manual ? await createManual() : { id: videoId }; return generate({ data: { videoId: target.id } }); },
-    onSuccess: () => {
-      toast.success("Vídeo pronto para gravar.");
+    onSuccess: (createdVideo) => {
+      toast.success("Roteiro longo pronto. Iniciando a produção do MP4.");
       router.invalidate();
+      if (createdVideo?.id) router.navigate({ to: "/videos/$videoId", params: { videoId: createdVideo.id } });
     },
     onError: (error) => {
       toast.error(error?.message || "Não foi possível gerar agora.");
