@@ -81,7 +81,7 @@ function VideoDetail() {
 
       <div className="mt-10 grid gap-10 lg:grid-cols-[330px_1fr]">
         <div className="lg:sticky lg:top-8 lg:self-start">
-          <RenderBlock video={video} />
+          <RenderBlock key={video.id} video={video} />
 
           {video.mp4_url && <button onClick={publishToTikTok} disabled={publishing} className="mt-3 flex h-11 w-full items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-foreground disabled:opacity-50">{publishing ? "Enviando ao TikTok..." : "Publicar no TikTok"}</button>}
 
