@@ -44,7 +44,7 @@ export const requireUser = createMiddleware({ type: "function" }).server(async (
     setResponseStatus(401);
     throw Object.assign(new Error("Sessão inválida. Entre novamente."), { status: 401, code: "UNAUTHORIZED" });
   }
-  return next({ context: { user: data.user } });
+  return next({ context: { ...context, user: data.user } });
 });
 
 export const requireUserRoute = createMiddleware({ type: "request" }).server(async ({ next, context }) => {
