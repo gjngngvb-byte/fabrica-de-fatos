@@ -145,7 +145,6 @@ export default function RenderBlock({ video }) {
 
   useEffect(() => {
     if (started.current) return;
-    if (!video.script) return;
     if (initialUrl) return;
     if (video.render_status === "pronto" && video.mp4_url && !legacyShort) return;
     started.current = true;
