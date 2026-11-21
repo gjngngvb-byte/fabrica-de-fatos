@@ -8,8 +8,8 @@ const DEFAULT_STUDIO = {
   language: "pt-BR",
   voice: "river",
   videos_per_day: 5,
-  duration_target: 30,
-  visual_style: "fotografia editorial cinematográfica, luz dramática lateral, cores quentes e profundas, textura de filme 35mm",
+  duration_target: 180,
+  visual_style: "fotografia documental cinematográfica, luz natural dramática, cores ricas, textura de filme 35mm",
   base_hashtags: ["fatoscuriosos", "vocesabia", "curiosidades"],
   cta: "Segue para mais um fato por dia.",
   avoid: "",
@@ -39,12 +39,8 @@ export const ensureTodayPlan = createServerFn({ method: "POST" })
     const existingSlots = new Set(videos.map((video) => video.slot));
     const missing = Array.from({ length: target }, (_, i) => i + 1)
       .filter((slot) => !existingSlots.has(slot))
-      .map((slot) => ({
-        created_by: context.user.id, scheduled_date: today, slot, status: "planejado",
-      }));
+      .map((slot) => ({ created_by: context.user.id, scheduled_date: today, slot, status: "planejado" }));
     if (missing.length) {
-      // The legacy import can create today's slots at the same time as this loader.
-      // Ignore conflicts so concurrent requests never break the dashboard.
       const { error: insertError } = await supabase.from("videos")
         .upsert(missing, { onConflict: "created_by,scheduled_date,slot", ignoreDuplicates: true });
       if (insertError) throw insertError;
@@ -106,18 +102,11 @@ export const generateVideoKit = createServerFn({ method: "POST" })
       .eq("id", data.videoId).eq("created_by", context.user.id).single();
     if (lookupError || !video) throw new Error("Vídeo não encontrado.");
     const { data: result, error } = await supabase.functions.invoke("generate-video-kit", {
-      body: { videoId: data.videoId, action: "generate", sceneCount: data.sceneCount },
+      body: { videoId: data.videoId, action: "generate" },
     });
-    if (error) throw new Error(error.message || "Falha ao gerar o vídeo.");
+    if (error) throw new Error(error.message || "Falha ao gerar o roteiro.");
     if (result?.error) throw new Error(result.error);
-
-    // Assim que o roteiro fica pronto, inicia a renderização do MP4 sem ação manual.
-    const { data: renderResult, error: renderError } = await supabase.functions.invoke("render-video", {
-      body: { videoId: data.videoId, action: "start" },
-    });
-    if (renderError) throw new Error(renderError.message || "Roteiro criado, mas não foi possível iniciar o MP4 automaticamente.");
-    if (renderResult?.error) throw new Error(renderResult.error);
-    return { ...result.video, ...(renderResult?.video || {}), render_started: true };
+    return result.video;
   });
 
 export const generateNarration = createServerFn({ method: "POST" })
@@ -125,9 +114,9 @@ export const generateNarration = createServerFn({ method: "POST" })
   .validator(z.object({ videoId: z.string().uuid() }))
   .handler(async ({ data, context }) => {
     const { data: result, error } = await context.getSupabase().functions.invoke("generate-video-kit", {
-      body: { videoId: data.videoId, action: "narration" },
+      body: { videoId: data.videoId, action: "generate" },
     });
-    if (error) throw new Error(error.message || "Falha ao gerar a narração.");
+    if (error) throw new Error(error.message || "Falha ao gerar roteiro e narração.");
     if (result?.error) throw new Error(result.error);
     return result.video;
   });
@@ -149,7 +138,7 @@ export const saveStudio = createServerFn({ method: "POST" })
   .validator(z.object({
     niche: z.string().max(120), tone: z.string().max(200), language: z.string().max(20),
     voice: z.enum(["river", "honey", "sunny", "storm", "spark"]),
-    videos_per_day: z.number().min(1).max(10), duration_target: z.number().min(10).max(90),
+    videos_per_day: z.number().min(1).max(10), duration_target: z.number().min(120).max(300),
     visual_style: z.string().max(400), base_hashtags: z.array(z.string().max(40)).max(10),
     cta: z.string().max(200), avoid: z.string().max(300),
   }))
