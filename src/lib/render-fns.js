@@ -3,8 +3,11 @@ import { z } from "zod";
 import { requireUser } from "@/lib/auth-middleware";
 
 async function requireContextUser(context) {
-  const { supabase, user } = { supabase: context.getSupabase(), user: context.user };
-  if (!supabase || !user) throw new Error("Sessão não disponível. Entre novamente.");
+  const supabase = context?.supabase;
+  const user = context?.user;
+  if (!supabase || !user?.id) {
+    throw new Error("A autenticação do servidor não forneceu o contexto do Supabase. Atualize a página e entre novamente.");
+  }
   return { supabase, user };
 }
 
