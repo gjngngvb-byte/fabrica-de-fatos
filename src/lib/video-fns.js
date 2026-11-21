@@ -25,30 +25,17 @@ async function loadStudio(supabase, userId) {
   return created;
 }
 
+// This loader is intentionally read-only: opening the dashboard must never recreate queue slots.
 export const ensureTodayPlan = createServerFn({ method: "POST" })
   .middleware([requireUser])
   .handler(async ({ context }) => {
     const supabase = context.getSupabase();
     const studio = await loadStudio(supabase, context.user.id);
     const today = new Date().toISOString().slice(0, 10);
-    const target = Math.min(Math.max(studio.videos_per_day || 5, 1), 10);
-    const { data: existing, error } = await supabase.from("videos").select("*")
+    const { data: videos, error } = await supabase.from("videos").select("*")
       .eq("created_by", context.user.id).eq("scheduled_date", today).order("slot", { ascending: true });
     if (error) throw error;
-    const videos = existing || [];
-    const existingSlots = new Set(videos.map((video) => video.slot));
-    const missing = Array.from({ length: target }, (_, i) => i + 1)
-      .filter((slot) => !existingSlots.has(slot))
-      .map((slot) => ({ created_by: context.user.id, scheduled_date: today, slot, status: "planejado" }));
-    if (missing.length) {
-      const { error: insertError } = await supabase.from("videos")
-        .upsert(missing, { onConflict: "created_by,scheduled_date,slot", ignoreDuplicates: true });
-      if (insertError) throw insertError;
-    }
-    const { data: refreshed, error: refreshError } = await supabase.from("videos").select("*")
-      .eq("created_by", context.user.id).eq("scheduled_date", today).order("slot", { ascending: true });
-    if (refreshError) throw refreshError;
-    return { videos: refreshed || [], studio, today };
+    return { videos: videos || [], studio, today };
   });
 
 export const listVideos = createServerFn({ method: "POST" })
