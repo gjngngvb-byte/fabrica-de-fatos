@@ -1,8 +1,8 @@
-import { createServerFn } from "@tanstack/react-start";
+import { createServerFn, createServerOnlyFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireUser } from "@/lib/auth-middleware";
 
-async function requireContextUser(context) {
+const requireContextUser = createServerOnlyFn(async (context) => {
   const userId = context?.userId;
   const token = context?.accessToken;
   if (!userId || !token) {
@@ -10,7 +10,7 @@ async function requireContextUser(context) {
   }
   const { createSupabaseForToken } = await import("@/lib/auth-context.server");
   return { supabase: createSupabaseForToken(token), user: { id: userId } };
-}
+});
 
 async function invokeMessage(error, fallback) {
   try {
