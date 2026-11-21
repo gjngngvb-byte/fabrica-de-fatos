@@ -1,18 +1,18 @@
 import { createMiddleware } from "@tanstack/react-start";
 
-// The browser forwards the Supabase access token on each server-function call.
-// Authentication is resolved inside this function middleware, not through a
-// request-context getter that may be absent on a later pipeline RPC.
+// Forward the current access token as explicit server-function context.
+// The server MUST validate it with Supabase auth.getUser before trusting it.
 export const authMiddleware = createMiddleware({ type: "function" })
   .client(async ({ next }) => {
     const { supabase } = await import("@/lib/supabase");
     const { data, error } = await supabase.auth.getSession();
     if (error) throw new Error("Não foi possível ler sua sessão: " + error.message);
     const token = data.session?.access_token;
-    return next({ headers: token ? { Authorization: `Bearer ${token}` } : {} });
+    return next({ sendContext: token ? { accessToken: token } : {} });
   })
   .server(async ({ next, context }) => {
     const { getAuthenticatedContext } = await import("@/lib/auth-context.server");
+    // getAuthenticatedContext validates the client-forwarded token against Supabase.
     const auth = await getAuthenticatedContext(context);
     return next({
       context: {
