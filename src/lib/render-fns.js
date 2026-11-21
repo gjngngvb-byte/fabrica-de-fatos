@@ -3,12 +3,13 @@ import { z } from "zod";
 import { requireUser } from "@/lib/auth-middleware";
 
 async function requireContextUser(context) {
-  const supabase = context?.supabase;
-  const user = context?.user;
-  if (!supabase || !user?.id) {
-    throw new Error("A autenticação do servidor não forneceu o contexto do Supabase. Atualize a página e entre novamente.");
+  const userId = context?.userId;
+  const token = context?.accessToken;
+  if (!userId || !token) {
+    throw new Error("A autenticação do servidor não forneceu os dados validados da sessão. Atualize a página e entre novamente.");
   }
-  return { supabase, user };
+  const { createSupabaseForToken } = await import("@/lib/auth-context.server");
+  return { supabase: createSupabaseForToken(token), user: { id: userId } };
 }
 
 async function invokeMessage(error, fallback) {
