@@ -10,7 +10,7 @@ const getConfig = () => ({
 export const getAuthenticatedContext = createServerOnlyFn(async (context = {}) => {
   const { getRequest, setResponseStatus } = await import("@tanstack/react-start/server");
   const request = getRequest();
-  const token = context?.accessToken || request.headers.get("authorization")?.replace(/^Bearer\\s+/i, "") || null;
+  const token = context?.accessToken || request.headers.get("authorization")?.replace(/^Bearer\s+/i, "") || null;
   if (!token) {
     setResponseStatus(401);
     throw Object.assign(new Error("Faça login para continuar."), { status: 401, code: "UNAUTHORIZED" });
@@ -40,7 +40,7 @@ export const authMiddleware = createMiddleware({ type: "function" })
   });
 
 export const supabaseRequestMiddleware = createMiddleware({ type: "request" }).server(async ({ next, request }) => {
-  const token = request.headers.get("authorization")?.replace(/^Bearer\\s+/i, "") || null;
+  const token = request.headers.get("authorization")?.replace(/^Bearer\s+/i, "") || null;
   const { url, key } = getConfig();
   const supabase = createClient(url, key, {
     auth: { persistSession: false, autoRefreshToken: false },
