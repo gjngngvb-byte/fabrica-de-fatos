@@ -29,10 +29,9 @@ function Today() {
   const router = useRouter();
   const generate = useServerFn(generateVideoKit);
   const createManual = useServerFn(createManualVideo);
-  const [sceneCount, setSceneCount] = useState(0);
 
   const mutation = useMutation({
-    mutationFn: async ({ videoId, sceneCount, manual = false }) => { const target = manual ? await createManual() : { id: videoId }; return generate({ data: { videoId: target.id, sceneCount } }); },
+    mutationFn: async ({ videoId, manual = false }) => { const target = manual ? await createManual() : { id: videoId }; return generate({ data: { videoId: target.id } }); },
     onSuccess: () => {
       toast.success("Vídeo pronto para gravar.");
       router.invalidate();
@@ -71,11 +70,8 @@ function Today() {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
-          <label className="flex h-11 items-center gap-2 rounded-full border border-border px-3 text-xs text-muted-foreground">
-            Estilo<select value={sceneCount} onChange={(event) => setSceneCount(Number(event.target.value))} className="bg-transparent font-medium text-foreground outline-none"><option value={0}>Vídeo contínuo (padrão)</option><option value={3}>3 cenas</option></select>
-          </label>
           <button
-          onClick={() => mutation.mutate({ sceneCount, manual: true })} disabled={mutation.isPending}
+          onClick={() => mutation.mutate({ manual: true })} disabled={mutation.isPending}
           className="inline-flex h-11 shrink-0 items-center gap-2 self-start rounded-full bg-primary px-5 text-sm font-medium text-primary-foreground transition-transform hover:-translate-y-0.5 disabled:translate-y-0 disabled:opacity-50 sm:self-auto"
         >
           <Sparkles className={`size-4 ${mutation.isPending ? "animate-pulse" : ""}`} />
@@ -104,7 +100,7 @@ function Today() {
                 key={video.id}
                 video={video}
                 index={i}
-                onGenerate={(v) => mutation.mutate({ videoId: v.id, sceneCount })}
+                onGenerate={(v) => mutation.mutate({ videoId: v.id })}
                 busy={mutation.isPending && mutation.variables?.videoId === video.id}
                 style={{ animationDelay: `${i * 60}ms` }}
               />
