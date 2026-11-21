@@ -53,3 +53,29 @@ export const requireUserRoute = createMiddleware({ type: "request" }).middleware
   if (error || !data.user) return Response.json({ error: "Unauthorized" }, { status: 401 });
   return next({ context: { ...context, user: data.user } });
 });
+
+
+/**
+ * Creates and authenticates a Supabase client directly from the current server
+ * request. Generation endpoints use this helper instead of relying on
+ * middleware context propagation.
+ */
+export async function getAuthenticatedSupabase() {
+  const request = getRequest();
+  const token = request.headers.get("authorization")?.replace(/^Bearer\\s+/i, "") || null;
+  if (!token) {
+    setResponseStatus(401);
+    throw Object.assign(new Error("Faça login para continuar."), { status: 401, code: "UNAUTHORIZED" });
+  }
+  const { url, key } = getConfig();
+  const supabase = createClient(url, key, {
+    auth: { persistSession: false, autoRefreshToken: false },
+    global: { headers: { Authorization: `Bearer ${token}` } },
+  });
+  const { data, error } = await supabase.auth.getUser(token);
+  if (error || !data.user) {
+    setResponseStatus(401);
+    throw Object.assign(new Error("Sessão inválida. Entre novamente."), { status: 401, code: "UNAUTHORIZED" });
+  }
+  return { supabase, user: data.user };
+}
