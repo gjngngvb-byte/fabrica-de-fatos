@@ -1,10 +1,17 @@
+import { useState } from "react";
 import { Link } from "@tanstack/react-router";
-import { ArrowUpRight, Loader2, Sparkles } from "lucide-react";
+import { ArrowUpRight, Loader2, Sparkles, Trash2 } from "lucide-react";
 import StatusPill from "@/components/studio/StatusPill";
 import { cn } from "@/lib/utils";
 
-export default function SlotCard({ video, index, onGenerate, busy, style }) {
+export default function SlotCard({ video, index, onGenerate, onDelete, busy, style }) {
   const ready = video?.status === "pronto" || video?.status === "publicado";
+  const [deleting, setDeleting] = useState(false);
+  const remove = async () => {
+    if (!window.confirm("Excluir este vídeo permanentemente, incluindo imagens, áudios e MP4?")) return;
+    setDeleting(true);
+    try { await onDelete?.(video); } finally { setDeleting(false); }
+  };
 
   return (
     <article
@@ -39,6 +46,7 @@ export default function SlotCard({ video, index, onGenerate, busy, style }) {
             </p>
           </>
         )}
+        </div>
       </div>
 
       <div className="mt-5 flex items-center justify-between border-t border-border/70 pt-4">
@@ -46,6 +54,10 @@ export default function SlotCard({ video, index, onGenerate, busy, style }) {
           {video?.scenes?.length ? `${video.scenes.length} cenas` : "9:16"}
         </span>
 
+        <div className="flex items-center gap-2">
+        <button onClick={remove} disabled={deleting || busy} title="Excluir permanentemente" aria-label="Excluir vídeo" className="grid size-8 place-items-center rounded-full text-muted-foreground hover:bg-destructive/10 hover:text-destructive disabled:opacity-50">
+          {deleting ? <Loader2 className="size-3.5 animate-spin" /> : <Trash2 className="size-3.5" />}
+        </button>
         {ready ? (
           <Link
             to="/videos/$videoId"
