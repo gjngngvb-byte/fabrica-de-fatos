@@ -8,7 +8,7 @@ const getConfig = () => ({
 
 export async function getAuthenticatedContext(context = {}) {
   const request = getRequest();
-  const token = context?.accessToken || request.headers.get("authorization")?.replace(/^Bearer\s+/i, "") || null;
+  const token = request.headers.get("authorization")?.replace(/^Bearer\s+/i, "") || context?.accessToken || null;
   if (!token) {
     setResponseStatus(401);
     throw Object.assign(new Error("Faça login para continuar."), { status: 401, code: "UNAUTHORIZED" });
