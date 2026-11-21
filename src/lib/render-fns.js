@@ -2,6 +2,15 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireUser } from "@/lib/auth-middleware";
 
+async function invokeMessage(error, fallback) {
+  try {
+    const response = error?.context;
+    const payload = response?.clone ? await response.clone().json() : null;
+    if (payload?.error || payload?.message) return payload.error || payload.message;
+  } catch {}
+  return error?.message || fallback;
+}
+
 export const generateSceneAsset = createServerFn({ method: "POST" })
   .middleware([requireUser])
   .validator(z.object({ videoId: z.string().uuid(), sceneIndex: z.number().int().min(0).max(30) }))
@@ -9,7 +18,7 @@ export const generateSceneAsset = createServerFn({ method: "POST" })
     const { data: result, error } = await context.getSupabase().functions.invoke("generate-video-kit", {
       body: { videoId: data.videoId, action: "scene_asset", sceneIndex: data.sceneIndex },
     });
-    if (error) throw new Error(error.message || "Falha ao gerar imagem e voz da cena.");
+    if (error) throw new Error(await invokeMessage(error, "Falha ao gerar imagem e voz da cena."));
     if (result?.error) throw new Error(result.error);
     return result;
   });
@@ -21,7 +30,7 @@ export const finalizeVideoAssets = createServerFn({ method: "POST" })
     const { data: result, error } = await context.getSupabase().functions.invoke("generate-video-kit", {
       body: { videoId: data.videoId, action: "finalize_assets" },
     });
-    if (error) throw new Error(error.message || "Falha ao sincronizar a narração.");
+    if (error) throw new Error(await invokeMessage(error, "Falha ao sincronizar a narração."));
     if (result?.error) throw new Error(result.error);
     return result;
   });
