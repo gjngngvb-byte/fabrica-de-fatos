@@ -9,7 +9,8 @@ const getConfig = () => ({
 // Runs once at the request boundary. The browser token is forwarded by the
 // function middleware below and becomes available to every protected handler.
 export const supabaseRequestMiddleware = createMiddleware({ type: "request" }).server(async ({ next, request }) => {
-  const token = request.headers.get("authorization")?.replace(/^Bearer\\s+/i, "") || null;
+  const authorization = request.headers.get("authorization") || "";
+  const token = authorization.match(/^Bearer\s+(.+)$/i)?.[1]?.trim() || null;
   const { url, key } = getConfig();
   if (!url || !key) throw new Error("Configuração do Supabase ausente no servidor.");
 
