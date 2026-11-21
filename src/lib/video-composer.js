@@ -138,7 +138,7 @@ export async function recordNarratedSlideshow(video, onProgress = () => {}) {
     : MediaRecorder.isTypeSupported("video/webm;codecs=vp8,opus")
       ? "video/webm;codecs=vp8,opus"
       : "video/webm";
-  const recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 4_000_000, audioBitsPerSecond: 128_000 });
+  const recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 2_200_000, audioBitsPerSecond: 96_000 });
   const chunks = [];
   const startAt = audioContext.currentTime + 0.15;
 
