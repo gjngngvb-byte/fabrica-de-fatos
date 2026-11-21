@@ -23,7 +23,7 @@ async function requireContext(context) {
   if (!userId || !token) {
     throw new Error("A autenticação do servidor não forneceu os dados validados da sessão. Atualize a página e entre novamente.");
   }
-  const { createSupabaseForToken } = await import("@/lib/auth-context.server");
+  const { createSupabaseForToken } = await import("@/lib/supabase-token-client");
   return { supabase: createSupabaseForToken(token), user: { id: userId } };
 }
 
