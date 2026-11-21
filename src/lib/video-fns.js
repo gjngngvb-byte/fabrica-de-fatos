@@ -1,6 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
-import { requireUser, authMiddleware } from "@/lib/auth-middleware";
+import { requireUser } from "@/lib/auth-middleware";
 
 const DEFAULT_STUDIO = {
   niche: "Fatos surpreendentes",
@@ -110,15 +110,12 @@ export const createManualVideo = createServerFn({ method: "POST" })
   });
 
 export const generateVideoKit = createServerFn({ method: "POST" })
-  .middleware([authMiddleware])
+  .middleware([requireUser])
   .validator(z.object({ videoId: z.string().uuid(), sceneCount: z.union([z.literal(0), z.literal(3)]).optional().default(0) }))
   .handler(async ({ data, context }) => {
-    const supabase = context.getSupabase?.();
-    const token = context.accessToken;
-    if (!supabase || !token) throw new Error("Sessão não disponível. Entre novamente.");
-    const { data: auth, error: authError } = await supabase.auth.getUser(token);
-    if (authError || !auth.user) throw new Error("Sessão inválida. Entre novamente.");
-    const user = auth.user;
+    const supabase = context.getSupabase();
+    const user = context.user;
+    if (!supabase || !user) throw new Error("Sessão não disponível. Entre novamente.");
     const { data: video, error: lookupError } = await supabase.from("videos").select("id")
       .eq("id", data.videoId).eq("created_by", user.id).single();
     if (lookupError || !video) throw new Error("Vídeo não encontrado.");
