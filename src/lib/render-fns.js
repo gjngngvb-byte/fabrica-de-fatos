@@ -27,26 +27,33 @@ async function invokeMessage(error, fallback) {
   return error?.message || fallback;
 }
 
-function assetAction(action, fallback) {
-  return createServerFn({ method: "POST" })
-    .middleware([requireUser])
-    .validator(z.object({ videoId: z.string().uuid(), sceneIndex: z.number().int().min(0).max(30) }))
-    .handler(async ({ data, context }) => {
-      const { supabase, user } = await requireContextUser(context);
-      const { data: owned, error: lookupError } = await supabase.from("videos").select("id")
-        .eq("id", data.videoId).eq("created_by", user.id).maybeSingle();
-      if (lookupError || !owned) throw new Error("Vídeo não encontrado.");
-      const { data: result, error } = await supabase.functions.invoke("generate-video-kit", {
-        body: { videoId: data.videoId, action, sceneIndex: data.sceneIndex },
-      });
-      if (error) throw new Error(await invokeMessage(error, fallback));
-      if (result?.error) throw new Error(result.error);
-      return result;
-    });
+async function runAssetAction({ data, context }, action, fallback) {
+  const { supabase, user } = await requireContextUser(context);
+  const { data: owned, error: lookupError } = await supabase.from("videos").select("id")
+    .eq("id", data.videoId).eq("created_by", user.id).maybeSingle();
+  if (lookupError || !owned) throw new Error("Vídeo não encontrado.");
+  const { data: result, error } = await supabase.functions.invoke("generate-video-kit", {
+    body: { videoId: data.videoId, action, sceneIndex: data.sceneIndex },
+  });
+  if (error) throw new Error(await invokeMessage(error, fallback));
+  if (result?.error) throw new Error(result.error);
+  return result;
 }
 
-export const generateSceneImage = assetAction("image_asset", "Falha ao gerar imagem.");
-export const generateSceneSpeech = assetAction("speech_asset", "Falha ao gerar narração.");
+const sceneAssetValidator = z.object({
+  videoId: z.string().uuid(),
+  sceneIndex: z.number().int().min(0).max(30),
+});
+
+export const generateSceneImage = createServerFn({ method: "POST" })
+  .middleware([requireUser])
+  .validator(sceneAssetValidator)
+  .handler((args) => runAssetAction(args, "image_asset", "Falha ao gerar imagem."));
+
+export const generateSceneSpeech = createServerFn({ method: "POST" })
+  .middleware([requireUser])
+  .validator(sceneAssetValidator)
+  .handler((args) => runAssetAction(args, "speech_asset", "Falha ao gerar narração."));
 
 export const finalizeVideoAssets = createServerFn({ method: "POST" })
   .middleware([requireUser])
