@@ -9,6 +9,8 @@ import { generateSceneAsset, finalizeVideoAssets } from "@/lib/render-fns";
 import { recordNarratedSlideshow, convertWebmToMp4 } from "@/lib/video-composer";
 import { supabase } from "@/lib/supabase";
 
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
 function safeFilename(value) {
   return String(value || "fabrica-de-fatos").replace(/[^a-z0-9-_]+/gi, "-").slice(0, 70);
 }
@@ -47,6 +49,7 @@ export default function RenderBlock({ video }) {
 
       let scenes = [...(currentVideo.scenes || [])];
       const total = scenes.length;
+      let lastGeminiRequestAt = 0;
       for (let i = 0; i < total; i++) {
         const existing = scenes[i];
         if (existing.image_url && existing.audio_path && Number(existing.audio_duration) > 0) {
@@ -58,7 +61,35 @@ export default function RenderBlock({ video }) {
           progress: 5 + Math.round((i / total) * 48),
           detail: "Gerando imagem e voz da cena " + (i + 1) + " de " + total + ".",
         });
-        const result = await createScene({ data: { videoId: video.id, sceneIndex: i } });
+        // Gemini TTS Free Tier allows only 3 requests per minute. Keep a 22s gap.
+        const elapsed = Date.now() - lastGeminiRequestAt;
+        if (lastGeminiRequestAt && elapsed < 22000) {
+          const waitMs = 22000 - elapsed;
+          setRender({
+            status: "renderizando", url: "", error: "",
+            progress: 5 + Math.round((i / total) * 48),
+            detail: "Respeitando o limite gratuito do Gemini. Próxima cena em " + Math.ceil(waitMs / 1000) + "s.",
+          });
+          await sleep(waitMs);
+        }
+        lastGeminiRequestAt = Date.now();
+        let result;
+        try {
+          result = await createScene({ data: { videoId: video.id, sceneIndex: i } });
+        } catch (sceneError) {
+          const message = String(sceneError?.message || sceneError);
+          if (!/429|quota exceeded|rate limit/i.test(message)) throw sceneError;
+          const retryMatch = message.match(/retry in ([0-9.]+)s/i);
+          const retryMs = Math.ceil((retryMatch ? Number(retryMatch[1]) : 40) * 1000) + 2000;
+          setRender({
+            status: "renderizando", url: "", error: "",
+            progress: 5 + Math.round((i / total) * 48),
+            detail: "O Gemini pediu uma pausa por limite de uso. Retomando em " + Math.ceil(retryMs / 1000) + "s.",
+          });
+          await sleep(retryMs);
+          lastGeminiRequestAt = Date.now();
+          result = await createScene({ data: { videoId: video.id, sceneIndex: i } });
+        }
         if (result?.video?.scenes) scenes = result.video.scenes;
         else if (result?.scene) scenes[i] = result.scene;
       }
