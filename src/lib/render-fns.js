@@ -1,6 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
-import { getAuthenticatedSupabase } from "@/lib/authenticated-supabase.server";
 
 async function invokeMessage(error, fallback) {
   try {
@@ -15,6 +14,7 @@ function assetAction(action, fallback) {
   return createServerFn({ method: "POST" })
     .validator(z.object({ videoId: z.string().uuid(), sceneIndex: z.number().int().min(0).max(30) }))
     .handler(async ({ data }) => {
+      const { getAuthenticatedSupabase } = await import("./authenticated-supabase.server");
       const { supabase } = await getAuthenticatedSupabase();
       const { data: result, error } = await supabase.functions.invoke("generate-video-kit", {
         body: { videoId: data.videoId, action, sceneIndex: data.sceneIndex },
@@ -31,6 +31,7 @@ export const generateSceneSpeech = assetAction("speech_asset", "Falha ao gerar n
 export const finalizeVideoAssets = createServerFn({ method: "POST" })
   .validator(z.object({ videoId: z.string().uuid() }))
   .handler(async ({ data }) => {
+    const { getAuthenticatedSupabase } = await import("./authenticated-supabase.server");
     const { supabase } = await getAuthenticatedSupabase();
     const { data: result, error } = await supabase.functions.invoke("generate-video-kit", {
       body: { videoId: data.videoId, action: "finalize_assets" },
