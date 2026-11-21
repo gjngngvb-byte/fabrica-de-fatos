@@ -39,9 +39,11 @@ export default function RenderBlock({ video }) {
 
   const build = async () => {
     if (busy) return;
+    let currentPhase = "inicialização";
     setBusy(true);
     setRender({ status: "renderizando", url: "", error: "", progress: 1, detail: "FASE 1/6 · Escolhendo um tema e escrevendo o roteiro completo." });
     try {
+      currentPhase = "preparação do roteiro";
       let currentVideo = activeVideo || video;
       const wordCount = String(currentVideo.script || "").trim().split(/\s+/).filter(Boolean).length;
       if (wordCount < 280 || !Array.isArray(currentVideo.scenes) || currentVideo.scenes.length !== TOTAL_SCENES) {
@@ -58,6 +60,7 @@ export default function RenderBlock({ video }) {
       setPreviewScenes(scenes);
       const total = TOTAL_SCENES;
 
+      currentPhase = "geração das 15 imagens";
       // FASE 2: as quinze imagens são concluídas antes de iniciar qualquer voz.
       for (let i = 0; i < total; i++) {
         if (scenes[i]?.image_url && scenes[i]?.image_path) {
@@ -85,6 +88,7 @@ export default function RenderBlock({ video }) {
         });
       }
 
+      currentPhase = "geração das 15 narrações";
       // FASE 3: a narração segue o roteiro original, repartido em quinze trechos contínuos.
       for (let i = 0; i < total; i++) {
         if (scenes[i]?.audio_path && Number(scenes[i]?.audio_duration) > 0) {
@@ -111,6 +115,7 @@ export default function RenderBlock({ video }) {
         });
       }
 
+      currentPhase = "união e validação da narração";
       setRender({ status: "renderizando", url: "", error: "", progress: 69, detail: "FASE 4/6 · Unindo os 15 trechos de voz em uma única narração e montando a linha do tempo." });
       const audioResult = await finalizeAssets({ data: { videoId: video.id, action: "finalize_audio" } });
       currentVideo = audioResult?.video;
@@ -119,6 +124,7 @@ export default function RenderBlock({ video }) {
       }
       setActiveVideo(currentVideo);
 
+      currentPhase = "criação e sincronização das legendas";
       setRender({ status: "renderizando", url: "", error: "", progress: 72, detail: "FASE 5/6 · Criando legendas a partir das 15 partes do roteiro e sincronizando com a voz." });
       const captionResult = await finalizeAssets({ data: { videoId: video.id, action: "build_captions" } });
       currentVideo = captionResult?.video;
@@ -129,17 +135,20 @@ export default function RenderBlock({ video }) {
       setActiveVideo(currentVideo);
       setPreviewScenes(currentVideo.scenes);
 
+      currentPhase = "renderização do vídeo no navegador";
       setRender({ status: "renderizando", url: "", error: "", progress: 74, detail: "FASE 6/6 · Montando o vídeo vertical com imagens, narração e legendas." });
       const webm = await recordNarratedSlideshow(currentVideo, (progress, detail) => {
         const overall = 74 + Math.round((progress / 75) * 16);
         setRender({ status: "renderizando", url: "", error: "", progress: overall, detail: "FASE 6/6 · " + detail });
       });
 
+      currentPhase = "conversão do vídeo para MP4";
       const mp4 = await convertWebmToMp4(webm, (progress, detail) => {
         const overall = 90 + Math.round(((progress - 76) / 22) * 7);
         setRender({ status: "renderizando", url: "", error: "", progress: Math.min(97, overall), detail: "FASE 6/6 · " + detail });
       });
 
+      currentPhase = "upload e gravação do MP4 no Supabase";
       setRender({ status: "renderizando", url: "", error: "", progress: 98, detail: "Validando o MP4 e salvando o arquivo final." });
       const { data: authData, error: authError } = await supabase.auth.getUser();
       if (authError || !authData?.user) throw new Error("Sua sessão expirou. Entre novamente para salvar o MP4.");
@@ -164,7 +173,10 @@ export default function RenderBlock({ video }) {
       toast.success("Vídeo completo de " + Math.round(duration / 60 * 10) / 10 + " minutos pronto!");
       router.invalidate();
     } catch (error) {
-      const message = error?.message || "Não foi possível concluir o vídeo.";
+      let reason = error?.message || (typeof error === "string" ? error : "Erro sem mensagem retornada pelo navegador.");
+      if (error?.name && error.name !== "Error") reason = error.name + ": " + reason;
+      if (error?.cause) reason += " | Causa: " + (error.cause?.message || String(error.cause));
+      const message = "Falha na etapa " + currentPhase + ": " + reason;
       try {
         const { data: authData } = await supabase.auth.getUser();
         if (authData?.user) {
