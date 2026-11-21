@@ -110,10 +110,15 @@ export const createManualVideo = createServerFn({ method: "POST" })
   });
 
 export const generateVideoKit = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
   .validator(z.object({ videoId: z.string().uuid(), sceneCount: z.union([z.literal(0), z.literal(3)]).optional().default(0) }))
-  .handler(async ({ data }) => {
-    const { getAuthenticatedSupabase } = await import("./authenticated-supabase.server");
-    const { supabase, user } = await getAuthenticatedSupabase();
+  .handler(async ({ data, context }) => {
+    const supabase = context.getSupabase?.();
+    const token = context.accessToken;
+    if (!supabase || !token) throw new Error("Sessão não disponível. Entre novamente.");
+    const { data: auth, error: authError } = await supabase.auth.getUser(token);
+    if (authError || !auth.user) throw new Error("Sessão inválida. Entre novamente.");
+    const user = auth.user;
     const { data: video, error: lookupError } = await supabase.from("videos").select("id")
       .eq("id", data.videoId).eq("created_by", user.id).single();
     if (lookupError || !video) throw new Error("Vídeo não encontrado.");
