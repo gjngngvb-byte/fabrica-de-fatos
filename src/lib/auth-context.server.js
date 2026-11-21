@@ -23,5 +23,5 @@ export async function getAuthenticatedContext(context = {}) {
     setResponseStatus(401);
     throw Object.assign(new Error("Sessão inválida. Entre novamente."), { status: 401, code: "UNAUTHORIZED" });
   }
-  return { supabase, user: data.user };
+  return { supabase, user: data.user, accessToken: token };
 }
