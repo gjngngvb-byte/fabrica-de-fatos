@@ -141,15 +141,17 @@ async function loadBitmap(url) {
 }
 
 function drawCover(context, bitmap, progress, alpha = 1) {
-  const scale = Math.max(WIDTH / bitmap.width, HEIGHT / bitmap.height) * (1.02 + 0.07 * progress);
-  const drawWidth = bitmap.width * scale;
-  const drawHeight = bitmap.height * scale;
-  const drift = Math.sin(progress * Math.PI) * 12;
-  const x = (WIDTH - drawWidth) / 2 + drift;
-  const y = (HEIGHT - drawHeight) / 2;
   if (!bitmap || !bitmap.complete || !bitmap.naturalWidth || !bitmap.naturalHeight) {
     throw new Error("Uma imagem da montagem foi desconectada ou perdeu os dados antes da renderização.");
   }
+  const imageWidth = bitmap.naturalWidth;
+  const imageHeight = bitmap.naturalHeight;
+  const scale = Math.max(WIDTH / imageWidth, HEIGHT / imageHeight) * (1.02 + 0.07 * progress);
+  const drawWidth = imageWidth * scale;
+  const drawHeight = imageHeight * scale;
+  const drift = Math.sin(progress * Math.PI) * 12;
+  const x = (WIDTH - drawWidth) / 2 + drift;
+  const y = (HEIGHT - drawHeight) / 2;
   context.globalAlpha = alpha;
   try {
     context.drawImage(bitmap, x, y, drawWidth, drawHeight);
@@ -207,151 +209,227 @@ export async function recordNarratedSlideshow(video, onProgress = () => {}) {
   if (!navigator.mediaDevices || typeof MediaRecorder === "undefined") {
     throw new Error("Este navegador não oferece gravação de vídeo. Abra o estúdio no Chrome ou Edge atualizado.");
   }
-  const scenes = video.scenes || [];
-  if (!scenes.length || !video.audio_url) throw new Error("O vídeo ainda não tem imagens e narração completas.");
-
-  onProgress(0, "Carregando imagens e narração");
-  const bitmaps = [];
-  for (let i = 0; i < scenes.length; i++) {
-    bitmaps.push(await loadBitmap(scenes[i].image_url));
-    onProgress(Math.round(((i + 1) / scenes.length) * 8), "Carregando imagem " + (i + 1) + " de " + scenes.length);
+  const scenes = Array.isArray(video.scenes) ? video.scenes : [];
+  if (scenes.length !== 15 || !video.audio_url) {
+    throw new Error("A montagem exige exatamente 15 cenas e a narração final.");
   }
 
-  // Evita reutilizar respostas 206/304 do cache de mídia do elemento <audio>.
-  const audioResponse = await fetch(video.audio_url, {
-    cache: "no-store",
-    headers: { "Cache-Control": "no-cache" },
-  });
-  if (!audioResponse.ok) throw new Error("Não foi possível carregar a narração final (HTTP " + audioResponse.status + ").");
-  if (audioResponse.status !== 200) throw new Error("O servidor entregou apenas um trecho da narração. Atualize e tente novamente.");
-  const audioBytes = await audioResponse.arrayBuffer();
-  const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-  const audioContext = new AudioContextClass();
-  let audioBuffer;
-  try {
-    // O WAV do pipeline é PCM 16-bit. A leitura direta evita falhas de decodeAudioData
-    // em navegadores móveis e não depende do decodificador nativo do aparelho.
-    audioBuffer = decodePcmWav(audioContext, audioBytes);
-  } catch (error) {
-    await audioContext.close();
-    throw error;
-  }
-  if (audioBuffer.duration < 120 || audioBuffer.duration > 300) {
-    await audioContext.close();
-    throw new Error("A narração tem " + Math.round(audioBuffer.duration) + " segundos. O limite é de 2 a 5 minutos.");
-  }
+  const images = [];
+  let audioContext = null;
+  let stream = null;
+  let recorder = null;
+  let source = null;
+  let animationId = 0;
+  let recordingStarted = false;
+  let recordedPromise = null;
 
-  const canvas = document.createElement("canvas");
-  canvas.width = WIDTH;
-  canvas.height = HEIGHT;
-  const context = canvas.getContext("2d", { alpha: false });
-  if (!context) throw new Error("Não foi possível preparar a tela de composição.");
-  drawFrame(context, scenes, bitmaps, 0);
-
-  const videoStream = canvas.captureStream(FPS);
-  const audioDestination = audioContext.createMediaStreamDestination();
-  const source = audioContext.createBufferSource();
-  source.buffer = audioBuffer;
-  source.connect(audioDestination);
-  const stream = new MediaStream([
-    ...videoStream.getVideoTracks(),
-    ...audioDestination.stream.getAudioTracks(),
-  ]);
-  const mimeType = MediaRecorder.isTypeSupported("video/webm;codecs=vp9,opus")
-    ? "video/webm;codecs=vp9,opus"
-    : MediaRecorder.isTypeSupported("video/webm;codecs=vp8,opus")
-      ? "video/webm;codecs=vp8,opus"
-      : "video/webm";
-  const recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 2_200_000, audioBitsPerSecond: 96_000 });
-  const chunks = [];
-  const startAt = audioContext.currentTime + 0.15;
-
-  const recorded = new Promise((resolve, reject) => {
-    recorder.ondataavailable = (event) => { if (event.data?.size) chunks.push(event.data); };
-    recorder.onerror = (event) => reject(event.error || new Error("Falha ao gravar a composição."));
-    recorder.onstop = () => resolve(new Blob(chunks, { type: mimeType }));
-  });
-
-  recorder.start(1000);
-  await audioContext.resume();
-  source.start(startAt);
+  const cleanup = async () => {
+    if (animationId) cancelAnimationFrame(animationId);
+    try { if (source) source.stop(); } catch {}
+    if (recorder && recorder.state !== "inactive") {
+      try { recorder.stop(); } catch {}
+    }
+    if (stream) stream.getTracks().forEach((track) => track.stop());
+    images.forEach((image) => {
+      if (image._composerObjectUrl) {
+        URL.revokeObjectURL(image._composerObjectUrl);
+        image._composerObjectUrl = "";
+      }
+    });
+    if (audioContext && audioContext.state !== "closed") {
+      try { await audioContext.close(); } catch {}
+    }
+  };
 
   try {
+    onProgress(0, "Carregando imagens e narração");
+    for (let i = 0; i < scenes.length; i++) {
+      if (!scenes[i]?.image_url) throw new Error("A cena " + (i + 1) + " não possui imagem.");
+      images.push(await loadBitmap(scenes[i].image_url));
+      onProgress(Math.round(((i + 1) / scenes.length) * 8), "Carregando imagem " + (i + 1) + " de " + scenes.length);
+    }
+
+    const audioResponse = await fetch(video.audio_url, {
+      cache: "no-store",
+      headers: { "Cache-Control": "no-cache" },
+    });
+    if (!audioResponse.ok) throw new Error("Não foi possível carregar a narração final (HTTP " + audioResponse.status + ").");
+    if (audioResponse.status !== 200) throw new Error("O servidor entregou apenas um trecho da narração. Atualize e tente novamente.");
+    const audioBytes = await audioResponse.arrayBuffer();
+    if (audioBytes.byteLength < 44) throw new Error("O arquivo de narração está vazio ou incompleto.");
+
+    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContextClass) throw new Error("Este navegador não oferece suporte à reprodução de áudio da montagem.");
+    audioContext = new AudioContextClass();
+    const audioBuffer = decodePcmWav(audioContext, audioBytes);
+    if (audioBuffer.duration < 120 || audioBuffer.duration > 300) {
+      throw new Error("A narração tem " + Math.round(audioBuffer.duration) + " segundos. O limite é de 2 a 5 minutos.");
+    }
+
+    const canvas = document.createElement("canvas");
+    canvas.width = WIDTH;
+    canvas.height = HEIGHT;
+    const context = canvas.getContext("2d", { alpha: false });
+    if (!context) throw new Error("Não foi possível preparar a tela de composição.");
+    drawFrame(context, scenes, images, 0);
+
+    if (typeof canvas.captureStream !== "function") {
+      throw new Error("Este navegador não permite capturar a composição do vídeo.");
+    }
+    const videoStream = canvas.captureStream(FPS);
+    const audioDestination = audioContext.createMediaStreamDestination();
+    source = audioContext.createBufferSource();
+    source.buffer = audioBuffer;
+    source.connect(audioDestination);
+    stream = new MediaStream([
+      ...videoStream.getVideoTracks(),
+      ...audioDestination.stream.getAudioTracks(),
+    ]);
+    if (!stream.getVideoTracks().length || !stream.getAudioTracks().length) {
+      throw new Error("O navegador não criou as faixas de vídeo e áudio necessárias.");
+    }
+
+    const mimeType = MediaRecorder.isTypeSupported("video/webm;codecs=vp9,opus")
+      ? "video/webm;codecs=vp9,opus"
+      : MediaRecorder.isTypeSupported("video/webm;codecs=vp8,opus")
+        ? "video/webm;codecs=vp8,opus"
+        : "video/webm";
+    recorder = new MediaRecorder(stream, {
+      mimeType,
+      videoBitsPerSecond: 2_200_000,
+      audioBitsPerSecond: 96_000,
+    });
+    const chunks = [];
+    recordedPromise = new Promise((resolve, reject) => {
+      recorder.ondataavailable = (event) => {
+        if (event.data?.size) chunks.push(event.data);
+      };
+      recorder.onerror = (event) => reject(event.error || new Error("Falha ao gravar a composição."));
+      recorder.onstop = () => resolve(new Blob(chunks, { type: mimeType }));
+    });
+
+    await audioContext.resume();
+    if (audioContext.state !== "running") {
+      throw new Error("O navegador bloqueou a reprodução do áudio durante a montagem. Clique em Retomar produção e mantenha a página aberta.");
+    }
+    const startAt = audioContext.currentTime + 0.15;
+    recorder.start(1000);
+    recordingStarted = true;
+    source.start(startAt);
+
     await new Promise((resolve, reject) => {
-      let animationId = 0;
+      let settled = false;
+      let lastAudioTime = audioContext.currentTime;
+      let lastAdvanceAt = Date.now();
+      const finish = (error) => {
+        if (settled) return;
+        settled = true;
+        if (animationId) cancelAnimationFrame(animationId);
+        animationId = 0;
+        if (error) reject(error);
+        else resolve();
+      };
       const frame = () => {
+        if (settled) return;
         try {
-          const elapsed = Math.max(0, audioContext.currentTime - startAt);
-          drawFrame(context, scenes, bitmaps, Math.min(audioBuffer.duration, elapsed));
-          onProgress(8 + Math.round((elapsed / audioBuffer.duration) * 67), "Sincronizando cenas e legendas · " + Math.min(100, Math.round((elapsed / audioBuffer.duration) * 100)) + "%");
-          if (elapsed < audioBuffer.duration) animationId = requestAnimationFrame(frame);
-          else resolve();
+          if (audioContext.state !== "running") {
+            throw new Error("O áudio foi pausado pelo navegador durante a montagem.");
+          }
+          const now = audioContext.currentTime;
+          if (now > lastAudioTime + 0.001) {
+            lastAudioTime = now;
+            lastAdvanceAt = Date.now();
+          } else if (Date.now() - lastAdvanceAt > 15000) {
+            throw new Error("O relógio de áudio parou de avançar. Mantenha a aba da Fábrica de Fatos em primeiro plano e tente novamente.");
+          }
+          const elapsed = Math.max(0, now - startAt);
+          drawFrame(context, scenes, images, Math.min(audioBuffer.duration, elapsed));
+          onProgress(
+            8 + Math.round((elapsed / audioBuffer.duration) * 67),
+            "Sincronizando cenas e legendas · " + Math.min(100, Math.round((elapsed / audioBuffer.duration) * 100)) + "%",
+          );
+          if (elapsed >= audioBuffer.duration) finish();
+          else animationId = requestAnimationFrame(frame);
         } catch (error) {
-          if (animationId) cancelAnimationFrame(animationId);
-          reject(error instanceof Error ? error : new Error(String(error)));
+          finish(error instanceof Error ? error : new Error(String(error)));
         }
       };
       animationId = requestAnimationFrame(frame);
-      source.onended = () => resolve();
     });
-  } catch (error) {
-    if (recorder.state !== "inactive") recorder.stop();
-    await recorded.catch(() => {});
-    stream.getTracks().forEach((track) => track.stop());
-    bitmaps.forEach((image) => image._composerObjectUrl && URL.revokeObjectURL(image._composerObjectUrl));
-    await audioContext.close();
-    throw new Error("Falha durante a renderização das cenas: " + (error?.message || String(error)));
-  }
 
-  if (recorder.state !== "inactive") recorder.stop();
-  const webm = await recorded;
-  stream.getTracks().forEach((track) => track.stop());
-  bitmaps.forEach((image) => image._composerObjectUrl && URL.revokeObjectURL(image._composerObjectUrl));
-  await audioContext.close();
-  if (!webm.size) throw new Error("A gravação ficou vazia.");
-  return webm;
+    if (recorder.state !== "inactive") recorder.stop();
+    const webm = await recordedPromise;
+    if (!webm?.size || webm.size < 64 * 1024) {
+      throw new Error("A gravação do vídeo ficou vazia ou incompleta.");
+    }
+    return webm;
+  } catch (error) {
+    if (recordingStarted && recordedPromise) {
+      if (recorder && recorder.state !== "inactive") {
+        try { recorder.stop(); } catch {}
+      }
+      await recordedPromise.catch(() => {});
+    }
+    throw new Error("Falha durante a renderização das cenas: " + (error?.message || String(error)));
+  } finally {
+    await cleanup();
+  }
 }
 
 export async function convertWebmToMp4(webm, onProgress = () => {}) {
+  if (!(webm instanceof Blob) || webm.size < 64 * 1024) {
+    throw new Error("A gravação WebM não contém dados suficientes para converter.");
+  }
   onProgress(76, "Carregando conversor MP4");
   const [{ FFmpeg }, { toBlobURL }] = await Promise.all([
     import("@ffmpeg/ffmpeg"),
     import("@ffmpeg/util"),
   ]);
   const ffmpeg = new FFmpeg();
-  const base = "https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.10/dist/umd";
-  const coreURL = await toBlobURL(base + "/ffmpeg-core.js", "text/javascript");
-  const wasmURL = await toBlobURL(base + "/ffmpeg-core.wasm", "application/wasm");
-  await ffmpeg.load({ coreURL, wasmURL });
-  ffmpeg.on("progress", ({ progress }) => {
-    onProgress(78 + Math.round(Math.max(0, Math.min(1, progress)) * 19), "Convertendo para MP4 · " + Math.round(progress * 100) + "%");
-  });
-  await ffmpeg.writeFile("input.webm", new Uint8Array(await webm.arrayBuffer()));
-  const code = await ffmpeg.exec([
-    "-i", "input.webm",
-    "-map", "0:v:0",
-    "-map", "0:a:0",
-    "-c:v", "libx264",
-    "-preset", "ultrafast",
-    "-b:v", "900k", "-maxrate", "1000k", "-bufsize", "2000k",
-    "-pix_fmt", "yuv420p",
-    "-r", String(FPS),
-    "-c:a", "aac",
-    "-b:a", "96k",
-    "-movflags", "+faststart",
-    "-shortest",
-    "output.mp4",
-  ]);
-  if (code !== 0) {
-    ffmpeg.terminate();
-    throw new Error("O conversor não conseguiu finalizar o MP4 (código " + code + ").");
+  let coreURL = "";
+  let wasmURL = "";
+  try {
+    const base = "https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.10/dist/umd";
+    coreURL = await toBlobURL(base + "/ffmpeg-core.js", "text/javascript");
+    wasmURL = await toBlobURL(base + "/ffmpeg-core.wasm", "application/wasm");
+    await ffmpeg.load({ coreURL, wasmURL });
+    ffmpeg.on("progress", ({ progress }) => {
+      const safeProgress = Math.max(0, Math.min(1, Number(progress) || 0));
+      onProgress(78 + Math.round(safeProgress * 19), "Convertendo para MP4 · " + Math.round(safeProgress * 100) + "%");
+    });
+    await ffmpeg.writeFile("input.webm", new Uint8Array(await webm.arrayBuffer()));
+    const code = await ffmpeg.exec([
+      "-i", "input.webm",
+      "-map", "0:v:0",
+      "-map", "0:a:0",
+      "-c:v", "libx264",
+      "-preset", "ultrafast",
+      "-b:v", "900k", "-maxrate", "1000k", "-bufsize", "2000k",
+      "-pix_fmt", "yuv420p",
+      "-r", String(FPS),
+      "-c:a", "aac",
+      "-b:a", "96k",
+      "-movflags", "+faststart",
+      "-shortest",
+      "output.mp4",
+    ]);
+    if (code !== 0) throw new Error("O conversor não conseguiu finalizar o MP4 (código " + code + ").");
+    const output = await ffmpeg.readFile("output.mp4");
+    const mp4 = new Blob([output], { type: "video/mp4" });
+    if (mp4.size < 64 * 1024) throw new Error("O MP4 final ficou pequeno demais e não passou na validação.");
+    const header = new Uint8Array(await mp4.slice(0, 16).arrayBuffer());
+    if (String.fromCharCode(...header.slice(4, 8)) !== "ftyp") throw new Error("O arquivo gerado não tem assinatura MP4 válida.");
+    onProgress(98, "MP4 validado");
+    return mp4;
+  } catch (error) {
+    const message = error?.message || String(error);
+    if (/failed to fetch|network|load|wasm|worker/i.test(message)) {
+      throw new Error("Não foi possível carregar ou executar o conversor MP4 gratuito. Verifique a conexão e tente novamente. Detalhe: " + message);
+    }
+    throw error;
+  } finally {
+    try { ffmpeg.terminate(); } catch {}
+    if (coreURL) URL.revokeObjectURL(coreURL);
+    if (wasmURL) URL.revokeObjectURL(wasmURL);
   }
-  const output = await ffmpeg.readFile("output.mp4");
-  ffmpeg.terminate();
-  const mp4 = new Blob([output], { type: "video/mp4" });
-  if (mp4.size < 64 * 1024) throw new Error("O MP4 final ficou pequeno demais e não passou na validação.");
-  const header = new Uint8Array(await mp4.slice(0, 16).arrayBuffer());
-  if (String.fromCharCode(...header.slice(4, 8)) !== "ftyp") throw new Error("O arquivo gerado não tem assinatura MP4 válida.");
-  onProgress(98, "MP4 validado");
-  return mp4;
 }
