@@ -29,6 +29,65 @@ function drawRoundedRect(context, x, y, width, height, radius) {
   context.closePath();
 }
 
+function decodePcmWav(audioContext, bytes) {
+  const view = new DataView(bytes);
+  const readTag = (offset) => String.fromCharCode(
+    view.getUint8(offset), view.getUint8(offset + 1),
+    view.getUint8(offset + 2), view.getUint8(offset + 3),
+  );
+  if (bytes.byteLength < 44 || readTag(0) !== "RIFF" || readTag(8) !== "WAVE") {
+    throw new Error("O arquivo de narração recebido não é um WAV válido.");
+  }
+
+  let offset = 12;
+  let channels = 0;
+  let sampleRate = 0;
+  let bitsPerSample = 0;
+  let audioFormat = 0;
+  let dataOffset = -1;
+  let dataSize = 0;
+
+  while (offset + 8 <= bytes.byteLength) {
+    const tag = readTag(offset);
+    const size = view.getUint32(offset + 4, true);
+    const start = offset + 8;
+    if (start + size > bytes.byteLength) {
+      throw new Error("O arquivo de narração chegou incompleto. Tente novamente.");
+    }
+    if (tag === "fmt ") {
+      if (size < 16) throw new Error("Cabeçalho WAV inválido.");
+      audioFormat = view.getUint16(start, true);
+      channels = view.getUint16(start + 2, true);
+      sampleRate = view.getUint32(start + 4, true);
+      bitsPerSample = view.getUint16(start + 14, true);
+    } else if (tag === "data") {
+      dataOffset = start;
+      dataSize = size;
+      break;
+    }
+    offset = start + size + (size % 2);
+  }
+
+  if (audioFormat !== 1 || !channels || !sampleRate || bitsPerSample !== 16 || dataOffset < 0) {
+    throw new Error("Formato de áudio não suportado. Esperado WAV PCM de 16 bits.");
+  }
+  const bytesPerFrame = channels * 2;
+  const frameCount = Math.floor(dataSize / bytesPerFrame);
+  if (!frameCount || dataOffset + frameCount * bytesPerFrame > bytes.byteLength) {
+    throw new Error("Os dados da narração estão incompletos ou vazios.");
+  }
+
+  const audioBuffer = audioContext.createBuffer(channels, frameCount, sampleRate);
+  for (let channel = 0; channel < channels; channel++) {
+    const output = audioBuffer.getChannelData(channel);
+    for (let frame = 0; frame < frameCount; frame++) {
+      const sample = view.getInt16(dataOffset + (frame * channels + channel) * 2, true);
+      output[frame] = sample < 0 ? sample / 32768 : sample / 32767;
+    }
+  }
+  return audioBuffer;
+}
+
 async function loadBitmap(url) {
   const response = await fetch(url);
   if (!response.ok) throw new Error("Não foi possível baixar uma das imagens do vídeo.");
@@ -106,12 +165,25 @@ export async function recordNarratedSlideshow(video, onProgress = () => {}) {
     onProgress(Math.round(((i + 1) / scenes.length) * 8), "Carregando imagem " + (i + 1) + " de " + scenes.length);
   }
 
-  const audioResponse = await fetch(video.audio_url);
-  if (!audioResponse.ok) throw new Error("Não foi possível carregar a narração final.");
+  // Evita reutilizar respostas 206/304 do cache de mídia do elemento <audio>.
+  const audioResponse = await fetch(video.audio_url, {
+    cache: "no-store",
+    headers: { "Cache-Control": "no-cache" },
+  });
+  if (!audioResponse.ok) throw new Error("Não foi possível carregar a narração final (HTTP " + audioResponse.status + ").");
+  if (audioResponse.status !== 200) throw new Error("O servidor entregou apenas um trecho da narração. Atualize e tente novamente.");
   const audioBytes = await audioResponse.arrayBuffer();
   const AudioContextClass = window.AudioContext || window.webkitAudioContext;
   const audioContext = new AudioContextClass();
-  const audioBuffer = await audioContext.decodeAudioData(audioBytes.slice(0));
+  let audioBuffer;
+  try {
+    // O WAV do pipeline é PCM 16-bit. A leitura direta evita falhas de decodeAudioData
+    // em navegadores móveis e não depende do decodificador nativo do aparelho.
+    audioBuffer = decodePcmWav(audioContext, audioBytes);
+  } catch (error) {
+    await audioContext.close();
+    throw error;
+  }
   if (audioBuffer.duration < 120 || audioBuffer.duration > 300) {
     await audioContext.close();
     throw new Error("A narração tem " + Math.round(audioBuffer.duration) + " segundos. O limite é de 2 a 5 minutos.");
