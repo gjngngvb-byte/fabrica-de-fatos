@@ -1,9 +1,10 @@
 import { useState } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 import { useServerFn } from "@tanstack/react-start";
 import VideoRow from "@/components/studio/VideoRow";
-import { listVideos } from "@/lib/video-fns";
+import { listVideos, deleteVideo } from "@/lib/video-fns";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/_authed/videos/")({
@@ -21,6 +22,15 @@ const FILTERS = [
 
 function Library() {
   const [status, setStatus] = useState("");
+  const queryClient = useQueryClient();
+  const removeVideo = useServerFn(deleteVideo);
+  const handleDelete = async (video) => {
+    try {
+      await removeVideo({ data: { videoId: video.id } });
+      await queryClient.invalidateQueries({ queryKey: ["videos"] });
+      toast.success("Vídeo e arquivos associados excluídos permanentemente.");
+    } catch (error) { toast.error(error?.message || "Não foi possível excluir o vídeo."); throw error; }
+  };
   const list = useServerFn(listVideos);
   const { data: videos = [], isLoading } = useQuery({
     queryKey: ["videos", status],
@@ -61,7 +71,7 @@ function Library() {
           </div>
         )}
         {videos.map((video) => (
-          <VideoRow key={video.id} video={video} />
+          <VideoRow key={video.id} video={video} onDelete={handleDelete} />
         ))}
       </div>
     </div>
