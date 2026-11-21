@@ -1,9 +1,9 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
-import { requireUser } from "@/lib/auth-middleware";
+import { requireUser, getAuthenticatedContext } from "@/lib/auth-middleware";
 
 async function requireContextUser(context) {
-  const { supabase, user } = await (await import("@/lib/auth-context.server")).getAuthenticatedContext(context);
+  const { supabase, user } = await getAuthenticatedContext(context);
   if (!supabase || !user) throw new Error("Sessão não disponível. Entre novamente.");
   return { supabase, user };
 }
