@@ -48,7 +48,7 @@ export default function RenderBlock({ video }) {
           url: fresh.mp4_url || "",
           error: fresh.render_error || "",
           progress: normalizeProgress(result.progress ?? result.progress_percent),
-          detail: result.message || result.detail || "",
+          detail: [result.stage ? "Etapa: " + result.stage : "", result.message || result.detail || ""].filter(Boolean).join(" · "),
         });
         if (fresh.render_status === "pronto" && fresh.mp4_url) {
           toast.success("MP4 verificado e pronto para baixar.");
@@ -79,7 +79,7 @@ export default function RenderBlock({ video }) {
         url: "",
         error: "",
         progress: normalizeProgress(result?.progress),
-        detail: "Pedido recebido. Aguardando o processamento do Gemini.",
+        detail: "Pedido recebido. Aguardando processamento da Agnes AI.",
       });
       toast.success("Geração iniciada. O status será verificado automaticamente.");
     } catch (error) {
@@ -170,7 +170,7 @@ export default function RenderBlock({ video }) {
           <div className="rounded-xl border border-border bg-card/60 p-3">
             <div className="mb-2 flex items-center justify-between gap-3 text-[11px]">
               <span className="font-medium text-foreground">
-                {render.status === "ajustando_proporcao" ? "Validando enquadramento" : render.status === "finalizando_arquivo" ? "Preparando arquivo para download" : "Renderização em andamento"}
+                {render.status === "ajustando_proporcao" ? "Validando enquadramento" : render.status === "finalizando_arquivo" ? "Preparando arquivo para download" : "Agnes AI · processamento e validação"}
               </span>
               <span className="font-mono text-muted-foreground">
                 {render.progress === null ? "Progresso não informado" : render.progress + "%"}
@@ -184,7 +184,7 @@ export default function RenderBlock({ video }) {
               )}
             </div>
             <p className="mt-2 text-[10px] leading-relaxed text-muted-foreground">
-              {render.detail || "Consultando o estado real da tarefa no Gemini automaticamente."}
+              {render.detail || "Consultando a etapa atual da geração, validação e armazenamento do MP4."}
             </p>
           </div>
         )}
