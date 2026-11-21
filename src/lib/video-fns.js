@@ -17,13 +17,14 @@ async function edgeFunctionMessage(error, fallback) {
   return error?.message || fallback;
 }
 
-function requireContext(context) {
-  const supabase = context?.supabase;
-  const user = context?.user;
-  if (!supabase || !user?.id) {
-    throw new Error("A autenticação do servidor não forneceu o contexto do Supabase. Atualize a página e entre novamente.");
+async function requireContext(context) {
+  const userId = context?.userId;
+  const token = context?.accessToken;
+  if (!userId || !token) {
+    throw new Error("A autenticação do servidor não forneceu os dados validados da sessão. Atualize a página e entre novamente.");
   }
-  return { supabase, user };
+  const { createSupabaseForToken } = await import("@/lib/auth-context.server");
+  return { supabase: createSupabaseForToken(token), user: { id: userId } };
 }
 
 const DEFAULT_STUDIO = {
@@ -53,7 +54,7 @@ async function loadStudio(supabase, userId) {
 export const ensureTodayPlan = createServerFn({ method: "POST" })
   .middleware([requireUser])
   .handler(async ({ context }) => {
-    const auth = requireContext(context);
+    const auth = await requireContext(context);
     const supabase = auth.supabase;
     const studio = await loadStudio(supabase, auth.user.id);
     const today = new Date().toISOString().slice(0, 10);
@@ -67,7 +68,7 @@ export const listVideos = createServerFn({ method: "POST" })
   .middleware([requireUser])
   .validator(z.object({ status: z.string().max(20).optional() }))
   .handler(async ({ data, context }) => {
-    const auth = requireContext(context);
+    const auth = await requireContext(context);
     let query = auth.supabase.from("videos").select("*").eq("created_by", auth.user.id).order("created_at", { ascending: false }).limit(60);
     if (data?.status) query = query.eq("status", data.status);
     const { data: rows, error } = await query;
@@ -79,7 +80,7 @@ export const getVideo = createServerFn({ method: "POST" })
   .middleware([requireUser])
   .validator(z.object({ videoId: z.string().uuid() }))
   .handler(async ({ data, context }) => {
-    const auth = requireContext(context);
+    const auth = await requireContext(context);
     const { data: video, error } = await auth.supabase.from("videos").select("*")
       .eq("id", data.videoId).eq("created_by", auth.user.id).maybeSingle();
     if (error) throw error;
@@ -90,7 +91,7 @@ export const deleteVideo = createServerFn({ method: "POST" })
   .middleware([requireUser])
   .validator(z.object({ videoId: z.string().uuid() }))
   .handler(async ({ data, context }) => {
-    const { supabase, user } = requireContext(context);
+    const { supabase, user } = await requireContext(context);
     const userId = user.id;
     const { data: video, error: lookupError } = await supabase.from("videos").select("*")
       .eq("id", data.videoId).eq("created_by", userId).maybeSingle();
@@ -132,12 +133,12 @@ export const deleteVideo = createServerFn({ method: "POST" })
 
 export const getStudio = createServerFn({ method: "POST" })
   .middleware([requireUser])
-  .handler(async ({ context }) => { const auth = requireContext(context); return loadStudio(auth.supabase, auth.user.id); });
+  .handler(async ({ context }) => { const auth = await requireContext(context); return loadStudio(auth.supabase, auth.user.id); });
 
 export const createManualVideo = createServerFn({ method: "POST" })
   .middleware([requireUser])
   .handler(async ({ context }) => {
-    const auth = requireContext(context);
+    const auth = await requireContext(context);
     const supabase = auth.supabase;
     const studio = await loadStudio(supabase, auth.user.id);
     const today = new Date().toISOString().slice(0, 10);
@@ -156,7 +157,7 @@ export const generateVideoKit = createServerFn({ method: "POST" })
   .middleware([requireUser])
   .validator(z.object({ videoId: z.string().uuid(), sceneCount: z.union([z.literal(0), z.literal(3)]).optional().default(0) }))
   .handler(async ({ data, context }) => {
-    const auth = requireContext(context);
+    const auth = await requireContext(context);
     const supabase = auth.supabase;
     const user = auth.user;
     if (!supabase || !user) throw new Error("Sessão não disponível. Entre novamente.");
@@ -175,7 +176,7 @@ export const generateNarration = createServerFn({ method: "POST" })
   .middleware([requireUser])
   .validator(z.object({ videoId: z.string().uuid() }))
   .handler(async ({ data, context }) => {
-    const auth = requireContext(context);
+    const auth = await requireContext(context);
     const { data: result, error } = await auth.supabase.functions.invoke("generate-video-kit", {
       body: { videoId: data.videoId, action: "generate" },
     });
@@ -188,7 +189,7 @@ export const markPublished = createServerFn({ method: "POST" })
   .middleware([requireUser])
   .validator(z.object({ videoId: z.string().uuid(), published: z.boolean() }))
   .handler(async ({ data, context }) => {
-    const auth = requireContext(context);
+    const auth = await requireContext(context);
     const { data: video, error } = await auth.supabase.from("videos").update({
       status: data.published ? "publicado" : "pronto",
       published_at: data.published ? new Date().toISOString() : null,
@@ -207,7 +208,7 @@ export const saveStudio = createServerFn({ method: "POST" })
     cta: z.string().max(200), avoid: z.string().max(300),
   }))
   .handler(async ({ data, context }) => {
-    const auth = requireContext(context);
+    const auth = await requireContext(context);
     const supabase = auth.supabase;
     const studio = await loadStudio(supabase, auth.user.id);
     const { data: updated, error } = await supabase.from("studios").update(data)
