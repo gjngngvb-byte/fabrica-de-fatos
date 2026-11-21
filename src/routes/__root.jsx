@@ -1,4 +1,4 @@
-import { HeadContent, Outlet, Scripts, createRootRoute } from "@tanstack/react-router";
+import { HeadContent, Outlet, Scripts, Link, createRootRoute } from "@tanstack/react-router";
 import { DefaultCatchBoundary } from "@/components/DefaultCatchBoundary";
 import { NotFound } from "@/components/NotFound";
 import { Toaster } from "@/components/ui/sonner";
@@ -34,6 +34,11 @@ function RootComponent() {
   return (
     <AuthProvider>
       <Outlet />
+      <footer className="mx-auto flex w-full max-w-6xl flex-wrap items-center justify-center gap-x-5 gap-y-2 border-t border-border/60 px-5 py-6 text-xs text-muted-foreground lg:px-12" aria-label="Links legais">
+        <span>© {new Date().getFullYear()} Fábrica de Fatos</span>
+        <Link to="/terms" className="underline-offset-4 hover:text-foreground hover:underline">Termos de Serviço</Link>
+        <Link to="/privacy" className="underline-offset-4 hover:text-foreground hover:underline">Política de Privacidade</Link>
+      </footer>
       <Toaster />
     </AuthProvider>
   );
