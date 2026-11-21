@@ -44,6 +44,7 @@ function decodePcmWav(audioContext, bytes) {
   let sampleRate = 0;
   let bitsPerSample = 0;
   let audioFormat = 0;
+  let blockAlign = 0;
   let dataOffset = -1;
   let dataSize = 0;
 
@@ -59,7 +60,13 @@ function decodePcmWav(audioContext, bytes) {
       audioFormat = view.getUint16(start, true);
       channels = view.getUint16(start + 2, true);
       sampleRate = view.getUint32(start + 4, true);
+      blockAlign = view.getUint16(start + 12, true);
       bitsPerSample = view.getUint16(start + 14, true);
+      // WAVE_FORMAT_EXTENSIBLE stores the real subtype GUID after the base fmt fields.
+      if (audioFormat === 0xfffe && size >= 40) {
+        const subtype = view.getUint32(start + 24, true);
+        if (subtype === 1 || subtype === 3) audioFormat = subtype;
+      }
     } else if (tag === "data") {
       dataOffset = start;
       dataSize = size;
@@ -68,12 +75,20 @@ function decodePcmWav(audioContext, bytes) {
     offset = start + size + (size % 2);
   }
 
-  if (audioFormat !== 1 || !channels || !sampleRate || bitsPerSample !== 16 || dataOffset < 0) {
-    throw new Error("Formato de áudio não suportado. Esperado WAV PCM de 16 bits.");
+  const bytesPerSample = bitsPerSample / 8;
+  const supportedPcm = audioFormat === 1 && [8, 16, 24, 32].includes(bitsPerSample);
+  const supportedFloat = audioFormat === 3 && [32, 64].includes(bitsPerSample);
+  const expectedBlockAlign = channels * bytesPerSample;
+  if ((!supportedPcm && !supportedFloat) || !channels || !sampleRate ||
+      dataOffset < 0 || !bytesPerSample || blockAlign !== expectedBlockAlign) {
+    throw new Error(
+      "Formato WAV não suportado (formato " + audioFormat + ", " + bitsPerSample +
+      " bits, " + channels + " canal(is))."
+    );
   }
-  const bytesPerFrame = channels * 2;
-  const frameCount = Math.floor(dataSize / bytesPerFrame);
-  if (!frameCount || dataOffset + frameCount * bytesPerFrame > bytes.byteLength) {
+
+  const frameCount = Math.floor(dataSize / blockAlign);
+  if (!frameCount || dataOffset + frameCount * blockAlign > bytes.byteLength) {
     throw new Error("Os dados da narração estão incompletos ou vazios.");
   }
 
@@ -81,13 +96,32 @@ function decodePcmWav(audioContext, bytes) {
   for (let channel = 0; channel < channels; channel++) {
     const output = audioBuffer.getChannelData(channel);
     for (let frame = 0; frame < frameCount; frame++) {
-      const sample = view.getInt16(dataOffset + (frame * channels + channel) * 2, true);
-      output[frame] = sample < 0 ? sample / 32768 : sample / 32767;
+      const sampleOffset = dataOffset + frame * blockAlign + channel * bytesPerSample;
+      let sample;
+      if (supportedFloat) {
+        sample = bitsPerSample === 32
+          ? view.getFloat32(sampleOffset, true)
+          : view.getFloat64(sampleOffset, true);
+      } else if (bitsPerSample === 8) {
+        sample = (view.getUint8(sampleOffset) - 128) / 128;
+      } else if (bitsPerSample === 16) {
+        const value = view.getInt16(sampleOffset, true);
+        sample = value < 0 ? value / 32768 : value / 32767;
+      } else if (bitsPerSample === 24) {
+        let value = view.getUint8(sampleOffset) |
+          (view.getUint8(sampleOffset + 1) << 8) |
+          (view.getUint8(sampleOffset + 2) << 16);
+        if (value & 0x800000) value |= 0xff000000;
+        sample = value / (value < 0 ? 8388608 : 8388607);
+      } else {
+        const value = view.getInt32(sampleOffset, true);
+        sample = value < 0 ? value / 2147483648 : value / 2147483647;
+      }
+      output[frame] = Number.isFinite(sample) ? Math.max(-1, Math.min(1, sample)) : 0;
     }
   }
   return audioBuffer;
 }
-
 async function loadBitmap(url) {
   const response = await fetch(url);
   if (!response.ok) throw new Error("Não foi possível baixar uma das imagens do vídeo.");
