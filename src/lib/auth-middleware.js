@@ -1,5 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
-import { createMiddleware, createServerOnlyFn } from "@tanstack/react-start";
+import { createMiddleware } from "@tanstack/react-start";
 
 const getConfig = () => ({
   url: import.meta.env.VITE_SUPABASE_URL,
@@ -7,7 +7,7 @@ const getConfig = () => ({
 });
 
 // The server-only wrapper keeps request APIs and the server module out of the browser bundle.
-export const getAuthenticatedContext = createServerOnlyFn(async (context = {}) => {
+export async function getAuthenticatedContext(context = {}) {
   const { getRequest, setResponseStatus } = await import("@tanstack/react-start/server");
   const request = getRequest();
   const token = context?.accessToken || request.headers.get("authorization")?.replace(/^Bearer\s+/i, "") || null;
@@ -26,7 +26,7 @@ export const getAuthenticatedContext = createServerOnlyFn(async (context = {}) =
     throw Object.assign(new Error("Sessão inválida. Entre novamente."), { status: 401, code: "UNAUTHORIZED" });
   }
   return { supabase, user: data.user, accessToken: token };
-});
+}
 
 export const authMiddleware = createMiddleware({ type: "function" })
   .client(async ({ next }) => {
