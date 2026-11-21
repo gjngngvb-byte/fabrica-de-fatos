@@ -49,7 +49,7 @@ export const authMiddleware = createMiddleware({ type: "function" })
   });
 
 export const supabaseRequestMiddleware = createMiddleware({ type: "request" }).server(async ({ next, request }) => {
-  const token = request.headers.get("authorization")?.replace(/^Bearer\\s+/i, "") || null;
+  const token = request.headers.get("authorization")?.replace(/^Bearer\s+/i, "") || null;
   const { url, key } = getConfig();
   const supabase = createClient(url, key, {
     auth: { persistSession: false, autoRefreshToken: false },
