@@ -389,7 +389,8 @@ export async function convertWebmToMp4(webm, onProgress = () => {}) {
   let coreURL = "";
   let wasmURL = "";
   try {
-    const base = "https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.10/dist/umd";
+    // Vite must load the ESM core build. The UMD build fails inside the FFmpeg worker.
+    const base = "https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.10/dist/esm";
     coreURL = await toBlobURL(base + "/ffmpeg-core.js", "text/javascript");
     wasmURL = await toBlobURL(base + "/ffmpeg-core.wasm", "application/wasm");
     await ffmpeg.load({ coreURL, wasmURL });
