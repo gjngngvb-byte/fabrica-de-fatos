@@ -1,7 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireUser } from "@/lib/auth-middleware";
-import { getAuthenticatedSupabase } from "@/lib/authenticated-supabase.server";
 
 const DEFAULT_STUDIO = {
   niche: "Fatos surpreendentes",
@@ -113,6 +112,7 @@ export const createManualVideo = createServerFn({ method: "POST" })
 export const generateVideoKit = createServerFn({ method: "POST" })
   .validator(z.object({ videoId: z.string().uuid(), sceneCount: z.union([z.literal(0), z.literal(3)]).optional().default(0) }))
   .handler(async ({ data }) => {
+    const { getAuthenticatedSupabase } = await import("./authenticated-supabase.server");
     const { supabase, user } = await getAuthenticatedSupabase();
     const { data: video, error: lookupError } = await supabase.from("videos").select("id")
       .eq("id", data.videoId).eq("created_by", user.id).single();
