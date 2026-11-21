@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
-import { requireUser, getAuthenticatedSupabase } from "@/lib/auth-middleware";
+import { requireUser } from "@/lib/auth-middleware";
+import { getAuthenticatedSupabase } from "@/lib/authenticated-supabase.server";
 
 const DEFAULT_STUDIO = {
   niche: "Fatos surpreendentes",
