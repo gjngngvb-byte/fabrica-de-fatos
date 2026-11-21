@@ -123,9 +123,21 @@ function decodePcmWav(audioContext, bytes) {
   return audioBuffer;
 }
 async function loadBitmap(url) {
-  const response = await fetch(url);
-  if (!response.ok) throw new Error("Não foi possível baixar uma das imagens do vídeo.");
-  return createImageBitmap(await response.blob());
+  const response = await fetch(url, { cache: "no-store" });
+  if (!response.ok) throw new Error("Não foi possível baixar uma das imagens do vídeo (HTTP " + response.status + ").");
+  const objectUrl = URL.createObjectURL(await response.blob());
+  const image = new Image();
+  image.decoding = "async";
+  image.src = objectUrl;
+  try {
+    await image.decode();
+    if (!image.naturalWidth || !image.naturalHeight) throw new Error("Imagem carregada sem dimensões válidas.");
+    image._composerObjectUrl = objectUrl;
+    return image;
+  } catch (error) {
+    URL.revokeObjectURL(objectUrl);
+    throw new Error("Não foi possível decodificar uma imagem do vídeo: " + (error?.message || String(error)));
+  }
 }
 
 function drawCover(context, bitmap, progress, alpha = 1) {
@@ -135,9 +147,15 @@ function drawCover(context, bitmap, progress, alpha = 1) {
   const drift = Math.sin(progress * Math.PI) * 12;
   const x = (WIDTH - drawWidth) / 2 + drift;
   const y = (HEIGHT - drawHeight) / 2;
+  if (!bitmap || !bitmap.complete || !bitmap.naturalWidth || !bitmap.naturalHeight) {
+    throw new Error("Uma imagem da montagem foi desconectada ou perdeu os dados antes da renderização.");
+  }
   context.globalAlpha = alpha;
-  context.drawImage(bitmap, x, y, drawWidth, drawHeight);
-  context.globalAlpha = 1;
+  try {
+    context.drawImage(bitmap, x, y, drawWidth, drawHeight);
+  } finally {
+    context.globalAlpha = 1;
+  }
 }
 
 function drawFrame(context, scenes, bitmaps, time) {
@@ -258,22 +276,37 @@ export async function recordNarratedSlideshow(video, onProgress = () => {}) {
   await audioContext.resume();
   source.start(startAt);
 
-  await new Promise((resolve) => {
-    const frame = () => {
-      const elapsed = Math.max(0, audioContext.currentTime - startAt);
-      drawFrame(context, scenes, bitmaps, Math.min(audioBuffer.duration, elapsed));
-      onProgress(8 + Math.round((elapsed / audioBuffer.duration) * 67), "Sincronizando cenas e legendas · " + Math.min(100, Math.round((elapsed / audioBuffer.duration) * 100)) + "%");
-      if (elapsed < audioBuffer.duration) requestAnimationFrame(frame);
-      else resolve();
-    };
-    requestAnimationFrame(frame);
-    source.onended = () => resolve();
-  });
+  try {
+    await new Promise((resolve, reject) => {
+      let animationId = 0;
+      const frame = () => {
+        try {
+          const elapsed = Math.max(0, audioContext.currentTime - startAt);
+          drawFrame(context, scenes, bitmaps, Math.min(audioBuffer.duration, elapsed));
+          onProgress(8 + Math.round((elapsed / audioBuffer.duration) * 67), "Sincronizando cenas e legendas · " + Math.min(100, Math.round((elapsed / audioBuffer.duration) * 100)) + "%");
+          if (elapsed < audioBuffer.duration) animationId = requestAnimationFrame(frame);
+          else resolve();
+        } catch (error) {
+          if (animationId) cancelAnimationFrame(animationId);
+          reject(error instanceof Error ? error : new Error(String(error)));
+        }
+      };
+      animationId = requestAnimationFrame(frame);
+      source.onended = () => resolve();
+    });
+  } catch (error) {
+    if (recorder.state !== "inactive") recorder.stop();
+    await recorded.catch(() => {});
+    stream.getTracks().forEach((track) => track.stop());
+    bitmaps.forEach((image) => image._composerObjectUrl && URL.revokeObjectURL(image._composerObjectUrl));
+    await audioContext.close();
+    throw new Error("Falha durante a renderização das cenas: " + (error?.message || String(error)));
+  }
 
   if (recorder.state !== "inactive") recorder.stop();
   const webm = await recorded;
   stream.getTracks().forEach((track) => track.stop());
-  bitmaps.forEach((bitmap) => bitmap.close?.());
+  bitmaps.forEach((image) => image._composerObjectUrl && URL.revokeObjectURL(image._composerObjectUrl));
   await audioContext.close();
   if (!webm.size) throw new Error("A gravação ficou vazia.");
   return webm;
