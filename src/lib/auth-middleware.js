@@ -62,24 +62,3 @@ export const requireUserRoute = createMiddleware({ type: "request" }).middleware
   if (error || !data.user) return Response.json({ error: "Unauthorized" }, { status: 401 });
   return next({ context: { ...context, user: data.user } });
 });
-
-
-export async function getAuthenticatedContext(context = {}) {
-  const request = getRequest();
-  const token = context?.accessToken || request.headers.get("authorization")?.replace(/^Bearer\\s+/i, "") || null;
-  if (!token) {
-    setResponseStatus(401);
-    throw Object.assign(new Error("Faça login para continuar."), { status: 401, code: "UNAUTHORIZED" });
-  }
-  const { url, key } = getConfig();
-  const supabase = typeof context?.getSupabase === "function" ? context.getSupabase() : createClient(url, key, {
-    auth: { persistSession: false, autoRefreshToken: false },
-    global: { headers: { Authorization: `Bearer ${token}` } },
-  });
-  const { data, error } = await supabase.auth.getUser(token);
-  if (error || !data.user) {
-    setResponseStatus(401);
-    throw Object.assign(new Error("Sessão inválida. Entre novamente."), { status: 401, code: "UNAUTHORIZED" });
-  }
-  return { supabase, user: data.user };
-}
