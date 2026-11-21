@@ -11,17 +11,22 @@ async function invokeMessage(error, fallback) {
   return error?.message || fallback;
 }
 
-export const generateSceneAsset = createServerFn({ method: "POST" })
-  .middleware([requireUser])
-  .validator(z.object({ videoId: z.string().uuid(), sceneIndex: z.number().int().min(0).max(30) }))
-  .handler(async ({ data, context }) => {
-    const { data: result, error } = await context.getSupabase().functions.invoke("generate-video-kit", {
-      body: { videoId: data.videoId, action: "scene_asset", sceneIndex: data.sceneIndex },
+function assetAction(action, fallback) {
+  return createServerFn({ method: "POST" })
+    .middleware([requireUser])
+    .validator(z.object({ videoId: z.string().uuid(), sceneIndex: z.number().int().min(0).max(30) }))
+    .handler(async ({ data, context }) => {
+      const { data: result, error } = await context.getSupabase().functions.invoke("generate-video-kit", {
+        body: { videoId: data.videoId, action, sceneIndex: data.sceneIndex },
+      });
+      if (error) throw new Error(await invokeMessage(error, fallback));
+      if (result?.error) throw new Error(result.error);
+      return result;
     });
-    if (error) throw new Error(await invokeMessage(error, "Falha ao gerar imagem e voz da cena."));
-    if (result?.error) throw new Error(result.error);
-    return result;
-  });
+}
+
+export const generateSceneImage = assetAction("image_asset", "Falha ao gerar imagem.");
+export const generateSceneSpeech = assetAction("speech_asset", "Falha ao gerar narração.");
 
 export const finalizeVideoAssets = createServerFn({ method: "POST" })
   .middleware([requireUser])
