@@ -1,6 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
-import { requireUser } from "@/lib/auth-middleware";
+import { getAuthenticatedSupabase } from "@/lib/auth-middleware";
 
 async function invokeMessage(error, fallback) {
   try {
@@ -13,10 +13,10 @@ async function invokeMessage(error, fallback) {
 
 function assetAction(action, fallback) {
   return createServerFn({ method: "POST" })
-    .middleware([requireUser])
     .validator(z.object({ videoId: z.string().uuid(), sceneIndex: z.number().int().min(0).max(30) }))
-    .handler(async ({ data, context }) => {
-      const { data: result, error } = await context.getSupabase().functions.invoke("generate-video-kit", {
+    .handler(async ({ data }) => {
+      const { supabase } = await getAuthenticatedSupabase();
+      const { data: result, error } = await supabase.functions.invoke("generate-video-kit", {
         body: { videoId: data.videoId, action, sceneIndex: data.sceneIndex },
       });
       if (error) throw new Error(await invokeMessage(error, fallback));
@@ -29,10 +29,10 @@ export const generateSceneImage = assetAction("image_asset", "Falha ao gerar ima
 export const generateSceneSpeech = assetAction("speech_asset", "Falha ao gerar narração.");
 
 export const finalizeVideoAssets = createServerFn({ method: "POST" })
-  .middleware([requireUser])
   .validator(z.object({ videoId: z.string().uuid() }))
-  .handler(async ({ data, context }) => {
-    const { data: result, error } = await context.getSupabase().functions.invoke("generate-video-kit", {
+  .handler(async ({ data }) => {
+    const { supabase } = await getAuthenticatedSupabase();
+    const { data: result, error } = await supabase.functions.invoke("generate-video-kit", {
       body: { videoId: data.videoId, action: "finalize_assets" },
     });
     if (error) throw new Error(await invokeMessage(error, "Falha ao sincronizar a narração."));
