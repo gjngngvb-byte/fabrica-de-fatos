@@ -1,6 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
-import { getAuthenticatedSupabase } from "@/lib/auth-middleware";
+import { getAuthenticatedSupabase } from "@/lib/authenticated-supabase.server";
 
 async function invokeMessage(error, fallback) {
   try {
