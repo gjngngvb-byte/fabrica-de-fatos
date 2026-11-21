@@ -59,6 +59,35 @@ export const getVideo = createServerFn({ method: "POST" })
     return video;
   });
 
+export const deleteVideo = createServerFn({ method: "POST" })
+  .middleware([requireUser])
+  .validator(z.object({ videoId: z.string().uuid() }))
+  .handler(async ({ data, context }) => {
+    const supabase = context.getSupabase();
+    const userId = context.user.id;
+    const { data: video, error: lookupError } = await supabase.from("videos").select("*")
+      .eq("id", data.videoId).eq("created_by", userId).maybeSingle();
+    if (lookupError) throw lookupError;
+    if (!video) throw new Error("Vídeo não encontrado ou já excluído.");
+
+    const paths = new Set([userId + "/" + video.id + ".mp4", userId + "/" + video.id + "-narration-full.wav"]);
+    for (const scene of (Array.isArray(video.scenes) ? video.scenes : [])) {
+      if (scene.image_path && String(scene.image_path).startsWith(userId + "/")) paths.add(scene.image_path);
+      if (scene.audio_path && String(scene.audio_path).startsWith(userId + "/")) paths.add(scene.audio_path);
+    }
+    const { error: storageError } = await supabase.storage.from("assets").remove([...paths]);
+    if (storageError) throw new Error("Não foi possível apagar os arquivos do vídeo: " + storageError.message);
+
+    const { error: publicationError } = await supabase.from("tiktok_publications").delete()
+      .eq("video_id", video.id);
+    if (publicationError && publicationError.code !== "42P01") throw publicationError;
+
+    const { error: deleteError } = await supabase.from("videos").delete()
+      .eq("id", video.id).eq("created_by", userId);
+    if (deleteError) throw deleteError;
+    return { success: true, deletedId: video.id, filesRemoved: paths.size };
+  });
+
 export const getStudio = createServerFn({ method: "POST" })
   .middleware([requireUser])
   .handler(async ({ context }) => loadStudio(context.getSupabase(), context.user.id));
