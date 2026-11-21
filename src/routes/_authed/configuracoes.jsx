@@ -60,7 +60,7 @@ function Settings() {
     tone: studio.tone || "",
     voice: studio.voice || "river",
     videos_per_day: studio.videos_per_day || 5,
-    duration_target: studio.duration_target || 30,
+    duration_target: Math.min(300, Math.max(120, studio.duration_target || 180)),
     visual_style: studio.visual_style || "",
     cta: studio.cta || "",
     avoid: studio.avoid || "",
@@ -149,11 +149,11 @@ function Settings() {
               ))}
             </select>
           </Field>
-          <Field label="Duração alvo (s)">
+          <Field label="Duração alvo (segundos)" hint="A fábrica gera vídeos entre 2 e 5 minutos.">
             <input
               type="number"
-              min={10}
-              max={90}
+              min={120}
+              max={300}
               className={inputClass}
               value={form.duration_target}
               onChange={(e) => set("duration_target", e.target.value)}
