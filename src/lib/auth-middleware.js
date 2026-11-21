@@ -1,15 +1,10 @@
 import { createClient } from "@supabase/supabase-js";
-import { createMiddleware, createServerOnlyFn } from "@tanstack/react-start";
+import { createMiddleware } from "@tanstack/react-start";
+import { getAuthenticatedContext as resolveAuthenticatedContext } from "@/lib/auth-context.server";
 
 const getConfig = () => ({
   url: import.meta.env.VITE_SUPABASE_URL,
   key: import.meta.env.VITE_SUPABASE_ANON_KEY,
-});
-
-// Keep the server module behind TanStack's server-only boundary.
-export const getAuthenticatedContext = createServerOnlyFn(async (context = {}) => {
-  const { getAuthenticatedContext: resolveContext } = await import("@/lib/auth-context.server");
-  return resolveContext(context);
 });
 
 export const authMiddleware = createMiddleware({ type: "function" })
@@ -19,7 +14,7 @@ export const authMiddleware = createMiddleware({ type: "function" })
     return next({ headers: token ? { Authorization: `Bearer ${token}` } : {} });
   })
   .server(async ({ next, context }) => {
-    const auth = await getAuthenticatedContext(context);
+    const auth = await resolveAuthenticatedContext(context);
     return next({ context: { ...(context || {}), getSupabase: () => auth.supabase, accessToken: auth.accessToken, user: auth.user } });
   });
 
