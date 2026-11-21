@@ -41,14 +41,14 @@ export const generateSceneSpeech = assetAction("speech_asset", "Falha ao gerar n
 
 export const finalizeVideoAssets = createServerFn({ method: "POST" })
   .middleware([requireUser])
-  .validator(z.object({ videoId: z.string().uuid() }))
+  .validator(z.object({ videoId: z.string().uuid(), action: z.enum(["finalize_audio", "build_captions"]).default("finalize_audio") }))
   .handler(async ({ data, context }) => {
     const { supabase, user } = await requireContextUser(context);
     const { data: owned, error: lookupError } = await supabase.from("videos").select("id")
       .eq("id", data.videoId).eq("created_by", user.id).maybeSingle();
     if (lookupError || !owned) throw new Error("Vídeo não encontrado.");
     const { data: result, error } = await supabase.functions.invoke("generate-video-kit", {
-      body: { videoId: data.videoId, action: "finalize_assets" },
+      body: { videoId: data.videoId, action: data.action },
     });
     if (error) throw new Error(await invokeMessage(error, "Falha ao sincronizar a narração."));
     if (result?.error) throw new Error(result.error);
