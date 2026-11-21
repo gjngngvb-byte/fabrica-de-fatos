@@ -5,7 +5,7 @@ import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
 import { Sparkles, ArrowRight, Film, Radio, Repeat } from "lucide-react";
 import SlotCard from "@/components/studio/SlotCard";
-import { createManualVideo, ensureTodayPlan, generateVideoKit, deleteVideo } from "@/lib/video-fns";
+import { createManualVideo, ensureTodayPlan, deleteVideo } from "@/lib/video-fns";
 
 export const Route = createFileRoute("/_authed/")({
   head: () => ({ meta: [{ title: "Hoje — Estúdio" }] }),
@@ -27,7 +27,6 @@ function Metric({ value, label, accent }) {
 function Today() {
   const { videos, studio, today } = Route.useLoaderData();
   const router = useRouter();
-  const generate = useServerFn(generateVideoKit);
   const createManual = useServerFn(createManualVideo);
   const removeVideo = useServerFn(deleteVideo);
   const handleDelete = async (video) => {
@@ -39,11 +38,11 @@ function Today() {
   };
 
   const mutation = useMutation({
-    mutationFn: async ({ videoId, manual = false }) => { const target = manual ? await createManual() : { id: videoId }; return generate({ data: { videoId: target.id } }); },
-    onSuccess: (createdVideo) => {
-      toast.success("Roteiro longo pronto. Iniciando a produção do MP4.");
+    mutationFn: async ({ videoId, manual = false }) => manual ? await createManual() : { id: videoId },
+    onSuccess: (targetVideo) => {
+      toast.success("Produção iniciada automaticamente. Preparando tema e roteiro.");
       router.invalidate();
-      if (createdVideo?.id) router.navigate({ to: "/videos/$videoId", params: { videoId: createdVideo.id } });
+      if (targetVideo?.id) router.navigate({ to: "/videos/$videoId", params: { videoId: targetVideo.id } });
     },
     onError: (error) => {
       toast.error(error?.message || "Não foi possível gerar agora.");
