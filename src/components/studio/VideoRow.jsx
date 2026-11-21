@@ -13,8 +13,6 @@ export default function VideoRow({ video, onDelete }) {
   };
   return (
     <div
-      to="/videos/$videoId"
-      params={{ videoId: video.id }}
       className="group flex items-center gap-4 rounded-xl border border-transparent px-3 py-3.5 transition-colors hover:border-border hover:bg-card/60"
     >
       <div className="min-w-0 flex-1">
