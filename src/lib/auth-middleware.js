@@ -1,7 +1,7 @@
 import { createMiddleware } from "@tanstack/react-start";
 
-// Forward the current access token as explicit server-function context.
-// The server MUST validate it with Supabase auth.getUser before trusting it.
+// The browser forwards only the token. The server validates it with Supabase.
+// Keep middleware context JSON-safe: never put a Supabase client instance in it.
 export const authMiddleware = createMiddleware({ type: "function" })
   .client(async ({ next }) => {
     const { supabase } = await import("@/lib/supabase");
@@ -12,15 +12,8 @@ export const authMiddleware = createMiddleware({ type: "function" })
   })
   .server(async ({ next, context }) => {
     const { getAuthenticatedContext } = await import("@/lib/auth-context.server");
-    // getAuthenticatedContext validates the client-forwarded token against Supabase.
     const auth = await getAuthenticatedContext(context);
-    return next({
-      context: {
-        supabase: auth.supabase,
-        user: auth.user,
-        accessToken: auth.accessToken,
-      },
-    });
+    return next({ context: { userId: auth.user.id, accessToken: auth.accessToken } });
   });
 
 export const requireUser = authMiddleware;
@@ -28,5 +21,5 @@ export const requireUser = authMiddleware;
 export const requireUserRoute = createMiddleware({ type: "request" }).server(async ({ next, context }) => {
   const { getAuthenticatedContext } = await import("@/lib/auth-context.server");
   const auth = await getAuthenticatedContext(context);
-  return next({ context: { user: auth.user } });
+  return next({ context: { userId: auth.user.id } });
 });
