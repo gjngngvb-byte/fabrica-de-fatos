@@ -12,8 +12,14 @@ async function requireContextUser(context) {
 async function invokeMessage(error, fallback) {
   try {
     const response = error?.context;
-    const payload = response?.clone ? await response.clone().json() : null;
-    if (payload?.error || payload?.message) return payload.error || payload.message;
+    if (response?.clone) {
+      const body = await response.clone().text();
+      try {
+        const payload = JSON.parse(body);
+        if (payload?.error || payload?.message) return String(payload.error || payload.message);
+      } catch {}
+      if (body) return body.slice(0, 700);
+    }
   } catch {}
   return error?.message || fallback;
 }
