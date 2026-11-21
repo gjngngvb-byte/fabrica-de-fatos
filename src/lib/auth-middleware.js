@@ -34,7 +34,7 @@ export const supabaseRequestMiddleware = createMiddleware({ type: "request" }).s
   return next({ context: { getSupabase: () => supabase, accessToken: token } });
 });
 
-export const requireUser = createMiddleware({ type: "function" }).server(async ({ next, context }) => {
+export const requireUser = createMiddleware({ type: "function" }).middleware([authMiddleware]).server(async ({ next, context }) => {
   if (!context.accessToken) {
     setResponseStatus(401);
     throw Object.assign(new Error("Faça login para continuar."), { status: 401, code: "UNAUTHORIZED" });
@@ -47,7 +47,7 @@ export const requireUser = createMiddleware({ type: "function" }).server(async (
   return next({ context: { ...context, user: data.user } });
 });
 
-export const requireUserRoute = createMiddleware({ type: "request" }).server(async ({ next, context }) => {
+export const requireUserRoute = createMiddleware({ type: "request" }).middleware([supabaseRequestMiddleware]).server(async ({ next, context }) => {
   if (!context.accessToken) return Response.json({ error: "Unauthorized" }, { status: 401 });
   const { data, error } = await context.getSupabase().auth.getUser(context.accessToken);
   if (error || !data.user) return Response.json({ error: "Unauthorized" }, { status: 401 });
