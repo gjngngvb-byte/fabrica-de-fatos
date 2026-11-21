@@ -1,6 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
-import { requireUser } from "@/lib/auth-middleware";
+import { requireUser, getAuthenticatedSupabase } from "@/lib/auth-middleware";
 
 const DEFAULT_STUDIO = {
   niche: "Fatos surpreendentes",
@@ -110,12 +110,11 @@ export const createManualVideo = createServerFn({ method: "POST" })
   });
 
 export const generateVideoKit = createServerFn({ method: "POST" })
-  .middleware([requireUser])
   .validator(z.object({ videoId: z.string().uuid(), sceneCount: z.union([z.literal(0), z.literal(3)]).optional().default(0) }))
-  .handler(async ({ data, context }) => {
-    const supabase = context.getSupabase();
+  .handler(async ({ data }) => {
+    const { supabase, user } = await getAuthenticatedSupabase();
     const { data: video, error: lookupError } = await supabase.from("videos").select("id")
-      .eq("id", data.videoId).eq("created_by", context.user.id).single();
+      .eq("id", data.videoId).eq("created_by", user.id).single();
     if (lookupError || !video) throw new Error("Vídeo não encontrado.");
     const { data: result, error } = await supabase.functions.invoke("generate-video-kit", {
       body: { videoId: data.videoId, action: "generate" },
