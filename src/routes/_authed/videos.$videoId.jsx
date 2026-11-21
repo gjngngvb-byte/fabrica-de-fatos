@@ -56,10 +56,27 @@ function VideoDetail() {
 
   const publishToTikTok = async () => {
     setPublishing(true);
-    const { data, error } = await supabase.functions.invoke("tiktok-publish", { body: { videoId: video.id } });
-    setPublishing(false);
-    if (error || data?.error) { toast.error(data?.error || error?.message || "Falha ao publicar no TikTok."); return; }
-    toast.success("Vídeo enviado ao TikTok para processamento.");
+    try {
+      const { data, error } = await supabase.functions.invoke("tiktok-publish", { body: { videoId: video.id } });
+      if (error) {
+        let message = error.message || "Falha ao publicar no TikTok.";
+        try {
+          const details = await error.context?.json();
+          if (details?.error) message = details.error;
+        } catch {}
+        toast.error(message);
+        return;
+      }
+      if (data?.error) {
+        toast.error(data.error);
+        return;
+      }
+      toast.success(data?.message || "Vídeo enviado ao TikTok para processamento.");
+    } catch (error) {
+      toast.error(error?.message || "Não foi possível iniciar a publicação no TikTok.");
+    } finally {
+      setPublishing(false);
+    }
   };
 
   return (
