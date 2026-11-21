@@ -2,6 +2,21 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireUser } from "@/lib/auth-middleware";
 
+async function edgeFunctionMessage(error, fallback) {
+  try {
+    const response = error?.context;
+    if (response?.clone) {
+      const text = await response.clone().text();
+      try {
+        const payload = JSON.parse(text);
+        if (payload?.error || payload?.message) return String(payload.error || payload.message);
+      } catch {}
+      if (text) return text.slice(0, 700);
+    }
+  } catch {}
+  return error?.message || fallback;
+}
+
 const DEFAULT_STUDIO = {
   niche: "Fatos surpreendentes",
   tone: "curioso, direto e levemente provocador",
@@ -122,7 +137,7 @@ export const generateVideoKit = createServerFn({ method: "POST" })
     const { data: result, error } = await supabase.functions.invoke("generate-video-kit", {
       body: { videoId: data.videoId, action: "generate" },
     });
-    if (error) throw new Error(error.message || "Falha ao gerar o roteiro.");
+    if (error) throw new Error(await edgeFunctionMessage(error, "Falha ao gerar o roteiro."));
     if (result?.error) throw new Error(result.error);
     return result.video;
   });
