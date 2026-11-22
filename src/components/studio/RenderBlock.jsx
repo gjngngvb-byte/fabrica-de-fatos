@@ -225,8 +225,36 @@ export default function RenderBlock({ video }) {
         if (imageCount !== 17) throw new Error("A produção precisa conter exatamente 17 imagens: 1 chamada inicial + 15 cenas + 1 chamada final. Foram encontradas " + imageCount + ".");
       }
 
+      const introCalloutSpeechText = [calloutDisplay.introTitle, calloutDisplay.introText].filter(Boolean).join(". ").trim();
+      const outroCalloutSpeechText = [
+        calloutDisplay.outroText,
+        calloutDisplay.channelName ? "no " + calloutDisplay.channelName : "",
+      ].filter(Boolean).join(". ").trim();
+
+      currentPhase = "narração das chamadas inicial e final";
+      const calloutSpeechTasks = [
+        ...(introCalloutEnabled && introCalloutSpeechText
+          ? [{ sceneIndex: 15, narrationText: introCalloutSpeechText, label: "chamada inicial" }]
+          : []),
+        ...(outroCalloutEnabled && outroCalloutSpeechText
+          ? [{ sceneIndex: 16, narrationText: outroCalloutSpeechText, label: "chamada final" }]
+          : []),
+      ];
+      for (const task of calloutSpeechTasks) {
+        const targetScene = task.sceneIndex === 15 ? scenes[0] : scenes[14];
+        const cachedPath = task.sceneIndex === 15 ? targetScene?.intro_audio_path : targetScene?.outro_audio_path;
+        const cachedText = task.sceneIndex === 15 ? targetScene?.intro_audio_text : targetScene?.outro_audio_text;
+        if (cachedPath && cachedText === task.narrationText) continue;
+        setRender({ status: "renderizando", url: "", error: "", progress: 42,
+          detail: "FASE 3/6 · Criando voz da " + task.label + "." });
+        const result = await createSpeech({ data: { videoId: video.id, sceneIndex: task.sceneIndex, narrationText: task.narrationText } });
+        if (result?.video?.scenes) { currentVideo = result.video; scenes = result.video.scenes; }
+        setPreviewScenes([...scenes]);
+        setActiveVideo(currentVideo);
+      }
+
       currentPhase = "geração das 15 narrações";
-      // FASE 3: a narração segue o roteiro original, repartido em quinze trechos contínuos.
+      // Somente as quinze cenas centrais recebem os trechos do roteiro.
       for (let i = 0; i < total; i++) {
         if (scenes[i]?.audio_path && Number(scenes[i]?.audio_duration) > 0) {
           setRender({
@@ -254,9 +282,15 @@ export default function RenderBlock({ video }) {
 
       currentPhase = "união e validação da narração";
       let audioResult;
-      const savedAudioReady = Boolean(currentVideo.audio_url) &&
-        scenes.length === TOTAL_SCENES &&
-        scenes.every((scene) => scene?.audio_path && Number(scene?.audio_duration) > 0);
+      const introCalloutAudioReady = !introCalloutEnabled || !introCalloutSpeechText ||
+        Boolean(scenes[0]?.intro_audio_path && scenes[0]?.intro_audio_text === introCalloutSpeechText);
+      const outroCalloutAudioReady = !outroCalloutEnabled || !outroCalloutSpeechText ||
+        Boolean(scenes[14]?.outro_audio_path && scenes[14]?.outro_audio_text === outroCalloutSpeechText);
+      const calloutTimelineReady = !(introCalloutSpeechText || outroCalloutSpeechText) ||
+        Number(scenes[0]?.audio_timeline_version) === 1;
+      const savedAudioReady = Boolean(currentVideo.audio_url) && scenes.length === TOTAL_SCENES &&
+        scenes.every((scene) => scene?.audio_path && Number(scene?.audio_duration) > 0) &&
+        introCalloutAudioReady && outroCalloutAudioReady && calloutTimelineReady;
       if (savedAudioReady) {
         const savedDuration = scenes.reduce((sum, scene) => sum + Number(scene.audio_duration || 0), 0);
         audioResult = { video: { ...currentVideo, scenes }, audio_duration: currentVideo.audio_duration || savedDuration };
