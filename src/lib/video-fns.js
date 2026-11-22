@@ -34,6 +34,7 @@ const DEFAULT_STUDIO = {
   voice: "river",
   videos_per_day: 5,
   duration_target: 300,
+  output_resolution: "1080p",
   visual_style: "fotografia documental cinematográfica, luz natural dramática, cores ricas, textura de filme 35mm",
   base_hashtags: ["fatoscuriosos", "vocesabia", "curiosidades"],
   cta: "Segue para mais um fato por dia.",
@@ -219,6 +220,7 @@ export const saveStudio = createServerFn({ method: "POST" })
     niche: z.string().max(120), tone: z.string().max(200), language: z.string().max(20),
     voice: z.enum(["river", "honey", "sunny", "storm", "spark"]),
     videos_per_day: z.number().min(1).max(10), duration_target: z.number().min(120).max(300),
+    output_resolution: z.enum(["720p", "1080p"]).default("1080p"),
     visual_style: z.string().max(400), base_hashtags: z.array(z.string().max(40)).max(10),
     cta: z.string().max(200), intro_callout: z.string().max(200).default(""), intro_callout_enabled: z.boolean().default(true), outro_callout_enabled: z.boolean().default(true), avoid: z.string().max(300),
   }))
