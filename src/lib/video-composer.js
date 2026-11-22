@@ -267,22 +267,24 @@ export async function recordNarratedSlideshow(video, onProgress = () => {}) {
   try {
     onProgress(0, "Carregando imagens e narração");
     const callouts = {};
+    const introCalloutUrl = video.intro_callout_enabled === false ? "" : scenes[0]?.intro_callout_image_url;
+    const outroCalloutUrl = video.outro_callout_enabled === false ? "" : scenes[14]?.outro_callout_image_url;
     const totalImageCount = scenes.length +
-      Number(Boolean(scenes[0]?.intro_callout_image_url)) +
-      Number(Boolean(scenes[14]?.outro_callout_image_url));
+      Number(Boolean(introCalloutUrl)) +
+      Number(Boolean(outroCalloutUrl));
     for (let i = 0; i < scenes.length; i++) {
       if (!scenes[i]?.image_url) throw new Error("A cena " + (i + 1) + " não possui imagem.");
       images.push(await loadBitmap(scenes[i].image_url));
       onProgress(Math.round(((i + 1) / totalImageCount) * 8), "Carregando imagem principal " + (i + 1) + " de 15");
     }
-    if (scenes[0]?.intro_callout_image_url) {
+    if (introCalloutUrl) {
       callouts.introIndex = images.length;
-      images.push(await loadBitmap(scenes[0].intro_callout_image_url));
+      images.push(await loadBitmap(introCalloutUrl));
       onProgress(Math.round((images.length / totalImageCount) * 8), "Carregando imagem extra da chamada inicial");
     }
-    if (scenes[14]?.outro_callout_image_url) {
+    if (outroCalloutUrl) {
       callouts.outroIndex = images.length;
-      images.push(await loadBitmap(scenes[14].outro_callout_image_url));
+      images.push(await loadBitmap(outroCalloutUrl));
       onProgress(Math.round((images.length / totalImageCount) * 8), "Carregando imagem extra da chamada final");
     }
 
