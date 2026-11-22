@@ -611,8 +611,9 @@ export async function convertWebmToMp4(webm, onProgress = () => {}, outputResolu
       onProgress(78 + Math.round(safeProgress * 19), "Convertendo para MP4 · " + Math.round(safeProgress * 100) + "%");
     });
     onProgress(78, "Carregando o vídeo no conversor FFmpeg");
+    const inputName = isMp4Input ? "input.mp4" : "input.webm";
     await withTimeout(
-      ffmpeg.writeFile("input.webm", new Uint8Array(await webm.arrayBuffer())),
+      ffmpeg.writeFile(inputName, new Uint8Array(await webm.arrayBuffer())),
       90000,
       "O vídeo demorou demais para ser carregado no conversor MP4.",
     );
@@ -623,7 +624,6 @@ export async function convertWebmToMp4(webm, onProgress = () => {}, outputResolu
     const videoBitrate = Math.round(targetVideoBitrate / 1000) + "k";
     const maxVideoBitrate = Math.round(targetVideoBitrate * 1.08 / 1000) + "k";
     const videoBuffer = Math.round(targetVideoBitrate * 2 / 1000) + "k";
-    const inputName = isMp4Input ? "input.mp4" : "input.webm";
     const code = await withTimeout(
       ffmpeg.exec([
         "-i", inputName,
