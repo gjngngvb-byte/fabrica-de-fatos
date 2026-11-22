@@ -61,6 +61,7 @@ function Settings() {
     voice: studio.voice || "river",
     videos_per_day: studio.videos_per_day || 5,
     duration_target: Math.min(300, Math.max(120, studio.duration_target || 180)),
+    output_resolution: studio.output_resolution === "720p" ? "720p" : "1080p",
     visual_style: studio.visual_style || "",
     cta: studio.cta || "",
     intro_callout: studio.intro_callout || "",
@@ -84,6 +85,7 @@ function Settings() {
           voice: form.voice,
           videos_per_day: Number(form.videos_per_day) || 5,
           duration_target: Number(form.duration_target) || 30,
+          output_resolution: form.output_resolution,
           visual_style: form.visual_style,
           base_hashtags: form.hashtagsText
             .split(",")
@@ -166,6 +168,13 @@ function Settings() {
             />
           </Field>
         </div>
+
+        <Field label="Resolução do vídeo" hint="Full HD deixa a montagem mais nítida, mas gera arquivos maiores e exige mais do navegador.">
+          <select className={inputClass} value={form.output_resolution} onChange={(e) => set("output_resolution", e.target.value)}>
+            <option value="1080p" className="bg-card">Full HD · 1080 × 1920 (recomendado)</option>
+            <option value="720p" className="bg-card">HD · 720 × 1280</option>
+          </select>
+        </Field>
 
         <Field label="Estilo visual" hint="Aparece em toda imagem gerada.">
           <textarea
