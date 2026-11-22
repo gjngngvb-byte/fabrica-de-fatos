@@ -79,7 +79,9 @@
     "@supabase/supabase-js": "^2.57.0",
     "nitro": "latest",
     "@ffmpeg/ffmpeg": "^0.12.15",
-    "@ffmpeg/util": "^0.12.2"
+    "@ffmpeg/util": "^0.12.2",
+    "@aws-sdk/client-s3": "^3.850.0",
+    "@aws-sdk/s3-request-presigner": "^3.850.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.19.0",
