@@ -401,16 +401,25 @@ export async function recordNarratedSlideshow(video, onProgress = () => {}) {
 
     const nativeMp4Mime = ["video/mp4;codecs=avc1.42E01E,mp4a.40.2", "video/mp4"]
       .find((type) => MediaRecorder.isTypeSupported(type));
-    const mimeType = nativeMp4Mime ||
-      (MediaRecorder.isTypeSupported("video/webm;codecs=vp9,opus")
-        ? "video/webm;codecs=vp9,opus"
-        : MediaRecorder.isTypeSupported("video/webm;codecs=vp8,opus")
-          ? "video/webm;codecs=vp8,opus" : "video/webm");
-    recorder = new MediaRecorder(stream, {
+    const webmMimeType = MediaRecorder.isTypeSupported("video/webm;codecs=vp9,opus")
+      ? "video/webm;codecs=vp9,opus"
+      : MediaRecorder.isTypeSupported("video/webm;codecs=vp8,opus")
+        ? "video/webm;codecs=vp8,opus" : "video/webm";
+    let mimeType = nativeMp4Mime || webmMimeType;
+    const recorderOptions = {
       mimeType,
       videoBitsPerSecond: outputResolution.videoBitrate,
       audioBitsPerSecond: 96_000,
-    });
+    };
+    try {
+      recorder = new MediaRecorder(stream, recorderOptions);
+    } catch (nativeRecorderError) {
+      if (!nativeMp4Mime) throw nativeRecorderError;
+      // Some browsers report MP4 support but reject this particular stream.
+      // Fall back to WebM and let FFmpeg perform the MP4 conversion.
+      mimeType = webmMimeType;
+      recorder = new MediaRecorder(stream, { ...recorderOptions, mimeType });
+    }
     const chunks = [];
     recordedPromise = new Promise((resolve, reject) => {
       recorder.ondataavailable = (event) => {
