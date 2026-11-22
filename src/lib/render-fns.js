@@ -33,7 +33,7 @@ async function runAssetAction({ data, context }, action, fallback) {
     .eq("id", data.videoId).eq("created_by", user.id).maybeSingle();
   if (lookupError || !owned) throw new Error("Vídeo não encontrado.");
   const { data: result, error } = await supabase.functions.invoke("generate-video-kit", {
-    body: { videoId: data.videoId, action, sceneIndex: data.sceneIndex },
+    body: { videoId: data.videoId, action, sceneIndex: data.sceneIndex, narrationText: data.narrationText },
   });
   if (error) throw new Error(await invokeMessage(error, fallback));
   if (result?.error) throw new Error(result.error);
@@ -43,6 +43,7 @@ async function runAssetAction({ data, context }, action, fallback) {
 const sceneAssetValidator = z.object({
   videoId: z.string().uuid(),
   sceneIndex: z.number().int().min(0).max(30),
+  narrationText: z.string().max(2000).optional(),
 });
 
 export const generateSceneImage = createServerFn({ method: "POST" })
