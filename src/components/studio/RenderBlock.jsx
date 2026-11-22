@@ -4,7 +4,7 @@ import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
 import { Download, Film, Loader2, CheckCircle2, AlertCircle, RefreshCw } from "lucide-react";
 import PhonePlayer from "@/components/studio/PhonePlayer";
-import { generateVideoKit } from "@/lib/video-fns";
+import { generateVideoKit, getStudio } from "@/lib/video-fns";
 import { generateSceneImage, generateSceneSpeech, finalizeVideoAssets } from "@/lib/render-fns";
 import { recordNarratedSlideshow, convertWebmToMp4 } from "@/lib/video-composer";
 import { supabase } from "@/lib/supabase";
@@ -19,6 +19,7 @@ const pct = (done, total) => Math.round((done / Math.max(1, total)) * 100);
 export default function RenderBlock({ video }) {
   const router = useRouter();
   const createScript = useServerFn(generateVideoKit);
+  const loadStudio = useServerFn(getStudio);
   const createImage = useServerFn(generateSceneImage);
   const createSpeech = useServerFn(generateSceneSpeech);
   const finalizeAssets = useServerFn(finalizeVideoAssets);
@@ -45,6 +46,9 @@ export default function RenderBlock({ video }) {
     try {
       currentPhase = "preparação do roteiro";
       let currentVideo = activeVideo || video;
+      const studioConfig = await loadStudio();
+      const introCalloutEnabled = studioConfig?.intro_callout_enabled !== false;
+      const outroCalloutEnabled = studioConfig?.outro_callout_enabled !== false;
       const wordCount = String(currentVideo.script || "").trim().split(/\s+/).filter(Boolean).length;
       const normalizeNarration = (value) => String(value || "").normalize("NFC").replace(/\s+/g, " ").trim();
       const sceneNarration = Array.isArray(currentVideo.scenes)
@@ -97,6 +101,31 @@ export default function RenderBlock({ video }) {
           progress: 5 + Math.round(((i + 1) / total) * 38),
           detail: "FASE 2/6 · Imagem " + String(i + 1).padStart(2, "0") + "/15 concluída · " + pct(i + 1, total) + "%.",
         });
+      }
+
+      currentPhase = "geração das imagens das chamadas";
+      const calloutTasks = [
+        ...(introCalloutEnabled ? [{ sceneIndex: 15, label: "chamada inicial", exists: () => scenes[0]?.intro_callout_image_url && scenes[0]?.intro_callout_image_path }] : []),
+        ...(outroCalloutEnabled ? [{ sceneIndex: 16, label: "chamada final", exists: () => scenes[14]?.outro_callout_image_url && scenes[14]?.outro_callout_image_path }] : []),
+      ];
+      for (let i = 0; i < calloutTasks.length; i++) {
+        const task = calloutTasks[i];
+        if (task.exists()) continue;
+        setRender({
+          status: "renderizando", url: "", error: "",
+          progress: 40 + Math.round((i / Math.max(1, calloutTasks.length)) * 3),
+          detail: "FASE 2/6 · Criando imagem extra da " + task.label + ".",
+        });
+        const result = await createImage({ data: { videoId: video.id, sceneIndex: task.sceneIndex } });
+        if (result?.video?.scenes) {
+          currentVideo = result.video;
+          scenes = result.video.scenes;
+        } else if (result?.scene) {
+          const targetIndex = task.sceneIndex === 15 ? 0 : 14;
+          scenes[targetIndex] = result.scene;
+        }
+        setPreviewScenes([...scenes]);
+        setActiveVideo(currentVideo);
       }
 
       currentPhase = "geração das 15 narrações";
@@ -285,7 +314,7 @@ export default function RenderBlock({ video }) {
       <div className="mt-3 rounded-xl border border-border bg-card/50 p-3">
         <div className="mb-2 flex items-center justify-between text-[11px]">
           <span className="font-semibold text-foreground">Prévia das 15 cenas</span>
-          <span className="text-muted-foreground">{imagesReady}/15 imagens</span>
+          <span className="text-muted-foreground">{imagesReady}/15 imagens principais</span>
         </div>
         <div className="grid grid-cols-5 gap-2">
           {Array.from({ length: TOTAL_SCENES }, (_, index) => {
@@ -298,6 +327,20 @@ export default function RenderBlock({ video }) {
               </div>
             );
           })}
+        </div>
+        <div className="mt-3 grid grid-cols-2 gap-2">
+          {previewScenes[0]?.intro_callout_image_url && (
+            <div className="overflow-hidden rounded-lg border border-border">
+              <img src={previewScenes[0].intro_callout_image_url} alt="Chamada inicial" className="aspect-[3/4] w-full object-cover" />
+              <p className="p-2 text-[10px] text-muted-foreground">Imagem extra · Chamada inicial</p>
+            </div>
+          )}
+          {previewScenes[14]?.outro_callout_image_url && (
+            <div className="overflow-hidden rounded-lg border border-border">
+              <img src={previewScenes[14].outro_callout_image_url} alt="Chamada final" className="aspect-[3/4] w-full object-cover" />
+              <p className="p-2 text-[10px] text-muted-foreground">Imagem extra · Chamada final</p>
+            </div>
+          )}
         </div>
         <p className="mt-2 text-[10px] text-muted-foreground">{speechReady}/15 partes da narração prontas</p>
       </div>
