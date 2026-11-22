@@ -140,22 +140,40 @@ async function loadBitmap(url) {
   }
 }
 
-function drawCover(context, bitmap, progress, alpha = 1, width = WIDTH, height = HEIGHT) {
+function drawCover(context, bitmap, progress, alpha = 1, width = WIDTH, height = HEIGHT, motionSeed = 0) {
   if (!bitmap || !bitmap.complete || !bitmap.naturalWidth || !bitmap.naturalHeight) {
     throw new Error("Uma imagem da montagem foi desconectada ou perdeu os dados antes da renderização.");
   }
   const imageWidth = bitmap.naturalWidth;
   const imageHeight = bitmap.naturalHeight;
-  const scale = Math.max(width / imageWidth, height / imageHeight) * 1.04;
+  const t = Math.max(0, Math.min(1, progress));
+  // Small, slow camera moves. The old version crossed the entire panoramic
+  // image, making each still feel like a fast horizontal wipe.
+  const motions = [
+    { fromX: -1, fromY: 0, toX: 1, toY: 0, zoom: "in" },
+    { fromX: 0, fromY: 1, toX: 0, toY: -1, zoom: "out" },
+    { fromX: 1, fromY: 0, toX: -1, toY: 0, zoom: "out" },
+    { fromX: -1, fromY: -1, toX: 1, toY: 1, zoom: "in" },
+    { fromX: 0, fromY: -1, toX: 0, toY: 1, zoom: "in" },
+    { fromX: 1, fromY: 1, toX: -1, toY: -1, zoom: "out" },
+    { fromX: 0, fromY: 0, toX: 0, toY: 0, zoom: "in" },
+  ];
+  const motion = motions[Math.abs(Number(motionSeed) || 0) % motions.length];
+  const zoomProgress = motion.zoom === "out" ? 1 - t : t;
+  const scale = Math.max(width / imageWidth, height / imageHeight) * (1.035 + zoomProgress * 0.018);
   const drawWidth = imageWidth * scale;
   const drawHeight = imageHeight * scale;
-  // Pan slowly across the wider landscape image while keeping the final frame
-  // vertical. Older portrait assets retain a subtle centered movement.
-  const horizontalOverflow = Math.max(0, drawWidth - width);
-  const x = horizontalOverflow > width * 0.12
-    ? -horizontalOverflow * Math.max(0, Math.min(1, progress))
-    : (width - drawWidth) / 2 + Math.sin(progress * Math.PI) * 18 * (width / 720);
-  const y = (height - drawHeight) / 2;
+  const horizontalRoom = Math.max(0, drawWidth - width);
+  const verticalRoom = Math.max(0, drawHeight - height);
+  const ease = t * t * (3 - 2 * t);
+  // Travel is deliberately capped to a few percent of the frame, even when
+  // a 16:9 image has a very large horizontal crop in a 9:16 video.
+  const travelX = Math.min(horizontalRoom * 0.5, width * 0.025);
+  const travelY = Math.min(verticalRoom * 0.5, height * 0.025);
+  const directionX = motion.fromX + (motion.toX - motion.fromX) * ease;
+  const directionY = motion.fromY + (motion.toY - motion.fromY) * ease;
+  const x = (width - drawWidth) / 2 + directionX * travelX;
+  const y = (height - drawHeight) / 2 + directionY * travelY;
   context.globalAlpha = alpha;
   try {
     context.drawImage(bitmap, x, y, drawWidth, drawHeight);
@@ -164,42 +182,49 @@ function drawCover(context, bitmap, progress, alpha = 1, width = WIDTH, height =
   }
 }
 
-
 function drawCalloutOverlay(context, { title = "", message = "", channelName = "" } = {}, width = WIDTH, height = HEIGHT, alpha = 1) {
   const scale = width / 720;
   const maxWidth = width - 112 * scale;
   const entries = [];
-  if (title) entries.push({ text: title, fontSize: 38, weight: "bold", gap: 12 });
-  if (message) entries.push({ text: message, fontSize: 31, weight: "600", gap: 10 });
-  if (channelName) entries.push({ text: "no " + channelName, fontSize: 29, weight: "bold", gap: 0 });
+  if (title) entries.push({ text: title, fontSize: 40, color: "#FFE36E", weight: "bold", gap: 12 });
+  if (message) entries.push({ text: message, fontSize: 32, color: "#FFFFFF", weight: "bold", gap: 10 });
+  if (channelName) entries.push({ text: "no " + channelName, fontSize: 29, color: "#79E7F2", weight: "bold", gap: 0 });
   if (!entries.length) return;
 
   context.save();
   context.globalAlpha = alpha;
   context.textAlign = "center";
   context.textBaseline = "middle";
+  const fontFamily = "'Trebuchet MS', 'Arial Rounded MT Bold', sans-serif";
   const prepared = entries.map((entry) => {
-    context.font = entry.weight + " " + Math.round(entry.fontSize * scale) + "px Arial, sans-serif";
+    context.font = entry.weight + " " + Math.round(entry.fontSize * scale) + "px " + fontFamily;
     return { ...entry, lines: wrapText(context, entry.text, maxWidth - 36 * scale, 5) };
   });
   const lineHeights = prepared.map((entry) => entry.fontSize * 1.22 * scale);
   const contentHeight = prepared.reduce((sum, entry, i) =>
     sum + entry.lines.length * lineHeights[i] + entry.gap * scale, 0);
-  const padding = 24 * scale;
+  const padding = 25 * scale;
   const boxHeight = contentHeight + padding * 2;
   const boxY = height - 220 * scale - boxHeight;
-  context.fillStyle = "rgba(0,0,0,0.68)";
-  drawRoundedRect(context, 38 * scale, boxY, width - 76 * scale, boxHeight, 20 * scale);
-  context.fillStyle = "#ffffff";
-  let cursorY = boxY + padding;
+  context.fillStyle = "rgba(0,0,0,0.70)";
+  drawRoundedRect(context, 38 * scale, boxY, width - 76 * scale, boxHeight, 22 * scale);
+  context.fill();
+  // A restrained accent strip gives the callout a designed, finished edge.
+  context.fillStyle = "#FFE36E";
+  drawRoundedRect(context, width / 2 - 42 * scale, boxY + 7 * scale, 84 * scale, 5 * scale, 3 * scale);
+  context.fill();
+  let cursorY = boxY + padding + 5 * scale;
   prepared.forEach((entry, i) => {
-    context.font = entry.weight + " " + Math.round(entry.fontSize * scale) + "px Arial, sans-serif";
+    context.font = entry.weight + " " + Math.round(entry.fontSize * scale) + "px " + fontFamily;
     const lineHeight = lineHeights[i];
     entry.lines.forEach((line) => {
       const y = cursorY + lineHeight / 2;
-      context.strokeStyle = "rgba(0,0,0,0.9)";
-      context.lineWidth = 3 * scale;
+      context.shadowColor = "rgba(0,0,0,0.55)";
+      context.shadowBlur = 7 * scale;
+      context.lineWidth = 2.5 * scale;
+      context.strokeStyle = "rgba(0,0,0,0.85)";
       context.strokeText(line, width / 2, y, maxWidth);
+      context.fillStyle = entry.color;
       context.fillText(line, width / 2, y, maxWidth);
       cursorY += lineHeight;
     });
@@ -232,20 +257,20 @@ function drawFrame(context, scenes, bitmaps, time, callouts = {}, width = WIDTH,
   context.fillRect(0, 0, width, height);
 
   if (introActive) {
-    drawCover(context, bitmaps[callouts.introIndex], time / Math.max(0.1, introDuration), 1, width, height);
+    drawCover(context, bitmaps[callouts.introIndex], time / Math.max(0.1, introDuration), 1, width, height, 15);
     const introFade = time >= introDuration - 0.45
       ? Math.max(0, 1 - (time - (introDuration - 0.45)) / 0.45)
       : 1;
     if (time >= introDuration - 0.45) {
-      drawCover(context, bitmaps[0], 0, 1 - introFade, width, height);
+      drawCover(context, bitmaps[0], 0, 1 - introFade, width, height, 0);
     }
     drawCalloutOverlay(context, {
       title: callouts.introTitle,
       message: callouts.introText,
     }, width, height, introFade);
   } else if (outroActive) {
-    drawCover(context, bitmaps[index], progress, 1, width, height);
-    drawCover(context, bitmaps[callouts.outroIndex], (time - outroStart) / Math.max(0.1, outroDuration), Math.min(1, (time - outroStart) / 0.45), width, height);
+    drawCover(context, bitmaps[index], progress, 1, width, height, index);
+    drawCover(context, bitmaps[callouts.outroIndex], (time - outroStart) / Math.max(0.1, outroDuration), Math.min(1, (time - outroStart) / 0.45), width, height, 16);
     drawCalloutOverlay(context, {
       message: callouts.outroText,
       channelName: callouts.channelName,
@@ -256,34 +281,77 @@ function drawFrame(context, scenes, bitmaps, time, callouts = {}, width = WIDTH,
     const transitionStart = Math.max(start, end - 0.55);
     if (nextScene && sceneTime >= transitionStart) {
       const nextProgress = Math.min(1, (sceneTime - transitionStart) / 0.55);
-      drawCover(context, bitmaps[index + 1], 0, nextProgress, width, height);
+      drawCover(context, bitmaps[index + 1], 0, nextProgress, width, height, index + 1);
     }
   }
 
-  // Captions remain synchronized to the original audio clock.
+  // Reveal each word progressively inside its timed phrase. Phrase timings
+  // are already placed on the narration timeline by the caption builder.
   const caption = (scene.captions || []).find((item) =>
     time >= Number(item.start_seconds) && time < Number(item.end_seconds)
   );
   if (!introActive && !outroActive && caption?.text) {
     context.save();
     const scale = width / 720;
-    context.font = "bold " + Math.round(43 * scale) + "px Arial, sans-serif";
-    context.textAlign = "center";
+    const fontFamily = "'Trebuchet MS', 'Arial Rounded MT Bold', sans-serif";
+    context.font = "bold " + Math.round(43 * scale) + "px " + fontFamily;
+    context.textAlign = "left";
     context.textBaseline = "middle";
-    const lines = wrapText(context, caption.text, width - 104 * scale);
-    const lineHeight = 55 * scale;
-    const boxHeight = lines.length * lineHeight + 42 * scale;
+    const allWords = String(caption.text).trim().split(/\\s+/).filter(Boolean);
+    const totalChars = Math.max(1, allWords.reduce((sum, word) => sum + word.length, 0));
+    const phraseDuration = Math.max(0.05, Number(caption.end_seconds) - Number(caption.start_seconds));
+    const phraseProgress = Math.max(0, Math.min(1, (time - Number(caption.start_seconds)) / phraseDuration));
+    let accumulatedChars = 0;
+    let visibleCount = 0;
+    for (const word of allWords) {
+      accumulatedChars += word.length;
+      if (accumulatedChars / totalChars <= phraseProgress || visibleCount === 0) visibleCount++;
+      else break;
+    }
+    const visibleWords = allWords.slice(0, Math.max(1, visibleCount));
+    const maxTextWidth = width - 142 * scale;
+    const lines = [];
+    let line = [];
+    let lineWidth = 0;
+    for (const word of visibleWords) {
+      const wordWidth = context.measureText(word).width;
+      const spaceWidth = context.measureText(" ").width;
+      const nextWidth = lineWidth + (line.length ? spaceWidth : 0) + wordWidth;
+      if (nextWidth > maxTextWidth && line.length) {
+        lines.push(line);
+        line = [word];
+        lineWidth = wordWidth;
+      } else {
+        line.push(word);
+        lineWidth = nextWidth;
+      }
+    }
+    if (line.length) lines.push(line);
+    const lineHeight = 54 * scale;
+    const boxHeight = lines.length * lineHeight + 38 * scale;
     const boxY = height - 280 * scale - boxHeight / 2;
-    context.fillStyle = "rgba(0,0,0,0.68)";
+    context.fillStyle = "rgba(0,0,0,0.70)";
     drawRoundedRect(context, 38 * scale, boxY, width - 76 * scale, boxHeight, 20 * scale);
     context.fill();
-    context.fillStyle = "#ffffff";
-    lines.forEach((line, lineIndex) => {
-      context.strokeStyle = "rgba(0,0,0,0.9)";
-      context.lineWidth = 3 * scale;
-      const y = boxY + 22 * scale + lineHeight * lineIndex + lineHeight / 2;
-      context.strokeText(line, width / 2, y, width - 110 * scale);
-      context.fillText(line, width / 2, y, width - 110 * scale);
+    // Small golden accent at the top ties the subtitles to the callout design.
+    context.fillStyle = "#FFE36E";
+    drawRoundedRect(context, width / 2 - 26 * scale, boxY + 6 * scale, 52 * scale, 4 * scale, 2 * scale);
+    context.fill();
+    lines.forEach((wordsInLine, lineIndex) => {
+      const widths = wordsInLine.map((word) => context.measureText(word).width);
+      const gap = context.measureText(" ").width;
+      const totalWidth = widths.reduce((sum, value) => sum + value, 0) + gap * (wordsInLine.length - 1);
+      let x = (width - totalWidth) / 2;
+      const y = boxY + 24 * scale + lineHeight * lineIndex + lineHeight / 2;
+      wordsInLine.forEach((word, wordIndex) => {
+        context.lineWidth = 2.5 * scale;
+        context.strokeStyle = "rgba(0,0,0,0.92)";
+        context.strokeText(word, x, y);
+        context.fillStyle = (wordIndex === wordsInLine.length - 1 && lineIndex === lines.length - 1)
+          ? "#FFE36E" : "#FFFFFF";
+        context.fillText(word, x, y);
+        x += widths[wordIndex] + gap;
+      });
     });
     context.restore();
   }
