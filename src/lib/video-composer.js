@@ -147,29 +147,31 @@ function drawCover(context, bitmap, progress, alpha = 1, width = WIDTH, height =
   const imageWidth = bitmap.naturalWidth;
   const imageHeight = bitmap.naturalHeight;
   const t = Math.max(0, Math.min(1, progress));
-  // Small, slow camera moves. The old version crossed the entire panoramic
-  // image, making each still feel like a fast horizontal wipe.
+  // Slow Ken Burns-style camera motion with clearly visible lateral travel.
+  // Every scene pans horizontally; selected scenes also add a gentle vertical
+  // drift or a very subtle zoom so the movement never feels like a static zoom.
   const motions = [
-    { fromX: -1, fromY: 0, toX: 1, toY: 0, zoom: "in" },
-    { fromX: 0, fromY: 1, toX: 0, toY: -1, zoom: "out" },
+    { fromX: -1, fromY: 0, toX: 1, toY: 0, zoom: "none" },
+    { fromX: 1, fromY: -0.25, toX: -1, toY: 0.25, zoom: "none" },
+    { fromX: -1, fromY: 1, toX: 1, toY: -1, zoom: "in" },
     { fromX: 1, fromY: 0, toX: -1, toY: 0, zoom: "out" },
-    { fromX: -1, fromY: -1, toX: 1, toY: 1, zoom: "in" },
-    { fromX: 0, fromY: -1, toX: 0, toY: 1, zoom: "in" },
-    { fromX: 1, fromY: 1, toX: -1, toY: -1, zoom: "out" },
-    { fromX: 0, fromY: 0, toX: 0, toY: 0, zoom: "in" },
+    { fromX: -1, fromY: -1, toX: 1, toY: 1, zoom: "none" },
+    { fromX: 1, fromY: 0.5, toX: -1, toY: -0.5, zoom: "in" },
+    { fromX: -1, fromY: 0, toX: 1, toY: 0, zoom: "out" },
   ];
   const motion = motions[Math.abs(Number(motionSeed) || 0) % motions.length];
   const zoomProgress = motion.zoom === "out" ? 1 - t : t;
-  const scale = Math.max(width / imageWidth, height / imageHeight) * (1.035 + zoomProgress * 0.018);
+  const zoomAmount = motion.zoom === "none" ? 1.022 : 1.015 + zoomProgress * 0.018;
+  const scale = Math.max(width / imageWidth, height / imageHeight) * zoomAmount;
   const drawWidth = imageWidth * scale;
   const drawHeight = imageHeight * scale;
   const horizontalRoom = Math.max(0, drawWidth - width);
   const verticalRoom = Math.max(0, drawHeight - height);
+  // Smooth ease-in/ease-out prevents abrupt starts and stops. The lateral
+  // travel is now large enough to be seen on a phone, without reaching the crop edge.
   const ease = t * t * (3 - 2 * t);
-  // Travel is deliberately capped to a few percent of the frame, even when
-  // a 16:9 image has a very large horizontal crop in a 9:16 video.
-  const travelX = Math.min(horizontalRoom * 0.5, width * 0.025);
-  const travelY = Math.min(verticalRoom * 0.5, height * 0.025);
+  const travelX = Math.min(horizontalRoom * 0.5, width * 0.12);
+  const travelY = Math.min(verticalRoom * 0.5, height * 0.055);
   const directionX = motion.fromX + (motion.toX - motion.fromX) * ease;
   const directionY = motion.fromY + (motion.toY - motion.fromY) * ease;
   const x = (width - drawWidth) / 2 + directionX * travelX;
