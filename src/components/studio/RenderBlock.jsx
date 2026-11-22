@@ -362,7 +362,6 @@ export default function RenderBlock({ video }) {
         throw new Error("Falha ao enviar MP4 ao Cloudflare R2 (HTTP " + uploadResponse.status + "). " + detail.slice(0, 300));
       }
       const saved = await finalizeR2Upload({ data: { videoId: video.id, key: upload.key, duration } });
-      const updated = saved.video;
       retryAttemptRef.current = 0;
       if (retryTimerRef.current) {
         clearTimeout(retryTimerRef.current);
