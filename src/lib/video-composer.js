@@ -160,6 +160,50 @@ function drawCover(context, bitmap, progress, alpha = 1, width = WIDTH, height =
   }
 }
 
+
+function drawCalloutOverlay(context, { title = "", message = "", channelName = "" } = {}, width = WIDTH, height = HEIGHT, alpha = 1) {
+  const scale = width / 720;
+  const maxWidth = width - 112 * scale;
+  const entries = [];
+  if (title) entries.push({ text: title, fontSize: 38, weight: "bold", gap: 12 });
+  if (message) entries.push({ text: message, fontSize: 31, weight: "600", gap: 10 });
+  if (channelName) entries.push({ text: "no " + channelName, fontSize: 29, weight: "bold", gap: 0 });
+  if (!entries.length) return;
+
+  context.save();
+  context.globalAlpha = alpha;
+  context.textAlign = "center";
+  context.textBaseline = "middle";
+  const prepared = entries.map((entry) => {
+    context.font = entry.weight + " " + Math.round(entry.fontSize * scale) + "px Arial, sans-serif";
+    return { ...entry, lines: wrapText(context, entry.text, maxWidth - 36 * scale) };
+  });
+  const lineHeights = prepared.map((entry) => entry.fontSize * 1.22 * scale);
+  const contentHeight = prepared.reduce((sum, entry, i) =>
+    sum + entry.lines.length * lineHeights[i] + entry.gap * scale, 0);
+  const padding = 24 * scale;
+  const boxHeight = contentHeight + padding * 2;
+  const boxY = height - 220 * scale - boxHeight;
+  context.fillStyle = "rgba(0,0,0,0.68)";
+  drawRoundedRect(context, 38 * scale, boxY, width - 76 * scale, boxHeight, 20 * scale);
+  context.fillStyle = "#ffffff";
+  let cursorY = boxY + padding;
+  prepared.forEach((entry, i) => {
+    context.font = entry.weight + " " + Math.round(entry.fontSize * scale) + "px Arial, sans-serif";
+    const lineHeight = lineHeights[i];
+    entry.lines.forEach((line) => {
+      const y = cursorY + lineHeight / 2;
+      context.strokeStyle = "rgba(0,0,0,0.9)";
+      context.lineWidth = 3 * scale;
+      context.strokeText(line, width / 2, y, maxWidth);
+      context.fillText(line, width / 2, y, maxWidth);
+      cursorY += lineHeight;
+    });
+    cursorY += entry.gap * scale;
+  });
+  context.restore();
+}
+
 function drawFrame(context, scenes, bitmaps, time, callouts = {}, width = WIDTH, height = HEIGHT, totalDuration = Number(scenes[scenes.length - 1]?.end_seconds) || 0) {
   const introDuration = callouts.introIndex !== undefined ? Math.min(3, totalDuration / 10) : 0;
   const outroDuration = callouts.outroIndex !== undefined ? Math.min(3, totalDuration / 10) : 0;
@@ -185,12 +229,23 @@ function drawFrame(context, scenes, bitmaps, time, callouts = {}, width = WIDTH,
 
   if (introActive) {
     drawCover(context, bitmaps[callouts.introIndex], time / Math.max(0.1, introDuration), 1, width, height);
+    const introFade = time >= introDuration - 0.45
+      ? Math.max(0, 1 - (time - (introDuration - 0.45)) / 0.45)
+      : 1;
     if (time >= introDuration - 0.45) {
-      drawCover(context, bitmaps[0], 0, Math.min(1, (time - (introDuration - 0.45)) / 0.45), width, height);
+      drawCover(context, bitmaps[0], 0, 1 - introFade, width, height);
     }
+    drawCalloutOverlay(context, {
+      title: callouts.introTitle,
+      message: callouts.introText,
+    }, width, height, introFade);
   } else if (outroActive) {
     drawCover(context, bitmaps[index], progress, 1, width, height);
     drawCover(context, bitmaps[callouts.outroIndex], (time - outroStart) / Math.max(0.1, outroDuration), Math.min(1, (time - outroStart) / 0.45), width, height);
+    drawCalloutOverlay(context, {
+      message: callouts.outroText,
+      channelName: callouts.channelName,
+    }, width, height);
   } else {
     drawCover(context, bitmaps[index], progress, 1, width, height);
     const nextScene = scenes[index + 1];
@@ -205,7 +260,7 @@ function drawFrame(context, scenes, bitmaps, time, callouts = {}, width = WIDTH,
   const caption = (scene.captions || []).find((item) =>
     time >= Number(item.start_seconds) && time < Number(item.end_seconds)
   );
-  if (caption?.text) {
+  if (!introActive && !outroActive && caption?.text) {
     context.save();
     const scale = width / 720;
     context.font = "bold " + Math.round(43 * scale) + "px Arial, sans-serif";
@@ -267,7 +322,12 @@ export async function recordNarratedSlideshow(video, onProgress = () => {}) {
 
   try {
     onProgress(0, "Carregando imagens e narração");
-    const callouts = {};
+    const callouts = {
+      introTitle: String(video.intro_callout_title || ""),
+      introText: String(video.intro_callout_text || ""),
+      outroText: String(video.outro_callout_text || ""),
+      channelName: String(video.outro_channel_name || ""),
+    };
     const introEnabled = video.intro_callout_enabled !== false;
     const outroEnabled = video.outro_callout_enabled !== false;
     const introCalloutUrl = introEnabled ? scenes[0]?.intro_callout_image_url : "";
