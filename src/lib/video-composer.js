@@ -146,11 +146,15 @@ function drawCover(context, bitmap, progress, alpha = 1, width = WIDTH, height =
   }
   const imageWidth = bitmap.naturalWidth;
   const imageHeight = bitmap.naturalHeight;
-  const scale = Math.max(width / imageWidth, height / imageHeight) * (1.02 + 0.07 * progress);
+  const scale = Math.max(width / imageWidth, height / imageHeight) * 1.04;
   const drawWidth = imageWidth * scale;
   const drawHeight = imageHeight * scale;
-  const drift = Math.sin(progress * Math.PI) * 12 * (width / 720);
-  const x = (width - drawWidth) / 2 + drift;
+  // Pan slowly across the wider landscape image while keeping the final frame
+  // vertical. Older portrait assets retain a subtle centered movement.
+  const horizontalOverflow = Math.max(0, drawWidth - width);
+  const x = horizontalOverflow > width * 0.12
+    ? -horizontalOverflow * Math.max(0, Math.min(1, progress))
+    : (width - drawWidth) / 2 + Math.sin(progress * Math.PI) * 18 * (width / 720);
   const y = (height - drawHeight) / 2;
   context.globalAlpha = alpha;
   try {
