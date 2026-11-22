@@ -163,18 +163,13 @@ function drawCover(context, bitmap, progress, alpha = 1, width = WIDTH, height =
 function drawFrame(context, scenes, bitmaps, time, callouts = {}, width = WIDTH, height = HEIGHT, totalDuration = Number(scenes[scenes.length - 1]?.end_seconds) || 0) {
   const introDuration = callouts.introIndex !== undefined ? Math.min(3, totalDuration / 10) : 0;
   const outroDuration = callouts.outroIndex !== undefined ? Math.min(3, totalDuration / 10) : 0;
-  const mainDuration = Math.max(0.1, totalDuration - introDuration - outroDuration);
   const introActive = introDuration > 0 && time < introDuration;
   const outroStart = totalDuration - outroDuration;
   const outroActive = outroDuration > 0 && time >= outroStart;
 
-  // The callout images are independent opening/closing shots. The fifteen
-  // script images occupy the full middle section, without replacing a scene.
-  const sceneTime = introActive
-    ? 0
-    : outroActive
-      ? totalDuration
-      : Math.max(0, Math.min(totalDuration, ((time - introDuration) / mainDuration) * totalDuration));
+  // Keep every scene and caption on the original narration clock. The opening
+  // and closing callouts occupy the first/last seconds of their matching audio.
+  const sceneTime = Math.max(0, Math.min(totalDuration, time));
   let index = scenes.findIndex((scene) =>
     sceneTime >= Number(scene.start_seconds) && sceneTime < Number(scene.end_seconds)
   );
