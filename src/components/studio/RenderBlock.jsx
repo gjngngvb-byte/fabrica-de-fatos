@@ -43,7 +43,6 @@ export default function RenderBlock({ video }) {
     setRenderState({ ...next, progress: progressRef.current });
   };
   const [busy, setBusy] = useState(false);
-  const [autoResumeEnabled, setAutoResumeEnabled] = useState(true);
   const autoResumeRef = useRef(true);
   const retryTimerRef = useRef(null);
   const retryAttemptRef = useRef(0);
@@ -80,7 +79,6 @@ export default function RenderBlock({ video }) {
       const studioConfig = await loadStudio();
       const resumeEnabled = studioConfig?.auto_resume_enabled !== false;
       autoResumeRef.current = resumeEnabled;
-      setAutoResumeEnabled(resumeEnabled);
       const outputResolution = studioConfig?.output_resolution === "720p" ? "720p" : "1080p";
       setOutputResolution(outputResolution);
       const introCalloutEnabled = studioConfig?.intro_callout_enabled !== false;
@@ -377,7 +375,6 @@ export default function RenderBlock({ video }) {
             const latestSettings = await loadStudio();
             const enabled = latestSettings?.auto_resume_enabled !== false;
             autoResumeRef.current = enabled;
-            setAutoResumeEnabled(enabled);
             if (enabled) {
               toast.info("Retomando a produção do último ponto concluído…");
               build();
@@ -551,6 +548,7 @@ export default function RenderBlock({ video }) {
             <p className="flex items-start gap-2 rounded-xl border border-destructive/30 bg-destructive/5 p-3 text-[11px] text-destructive">
               <AlertCircle className="mt-0.5 size-4 shrink-0" /> {render.error || "A geração falhou. Tente novamente."}
             </p>
+            {render.detail && <p className="text-center text-[11px] text-muted-foreground">{render.detail}</p>}
             <button onClick={() => { retryAttemptRef.current = 0; build(); }} disabled={busy}
               className="flex h-10 w-full items-center justify-center gap-2 rounded-full bg-primary text-xs font-semibold text-primary-foreground disabled:opacity-50">
               <RefreshCw className="size-3.5" /> Retomar produção
