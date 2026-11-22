@@ -25,13 +25,23 @@ export default function RenderBlock({ video }) {
   const finalizeAssets = useServerFn(finalizeVideoAssets);
   const legacyShort = /12s|Agnes AI|Gemini Video/i.test(video.render_error || "");
   const initialUrl = legacyShort ? "" : (video.mp4_url || "");
-  const [render, setRender] = useState({
+  const [render, setRenderState] = useState({
     status: initialUrl ? "pronto" : (video.render_status || "ocioso"),
     url: initialUrl,
     error: "",
     progress: initialUrl ? 100 : 0,
     detail: initialUrl ? "MP4 disponível." : "Aguardando início da produção.",
   });
+  const progressRef = useRef(initialUrl ? 100 : 0);
+  const setRender = (next) => {
+    if (next.status === "pronto") progressRef.current = 100;
+    else if (next.status === "falhou") progressRef.current = 0;
+    else progressRef.current = Math.max(
+      progressRef.current,
+      Math.min(99, Math.max(0, Number(next.progress) || 0)),
+    );
+    setRenderState({ ...next, progress: progressRef.current });
+  };
   const [busy, setBusy] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [previewScenes, setPreviewScenes] = useState(video.scenes || []);
@@ -43,11 +53,13 @@ export default function RenderBlock({ video }) {
     if (busy) return;
     let currentPhase = "inicialização";
     setBusy(true);
+    progressRef.current = 0;
     setRender({ status: "renderizando", url: "", error: "", progress: 1, detail: "FASE 1/6 · Escolhendo um tema e escrevendo o roteiro completo." });
     try {
       currentPhase = "preparação do roteiro";
       let currentVideo = activeVideo || video;
       const studioConfig = await loadStudio();
+      const outputResolution = studioConfig?.output_resolution === "720p" ? "720p" : "1080p";
       const introCalloutEnabled = studioConfig?.intro_callout_enabled !== false;
       const outroCalloutEnabled = studioConfig?.outro_callout_enabled !== false;
       setCalloutSettings({ intro: introCalloutEnabled, outro: outroCalloutEnabled });
@@ -197,7 +209,7 @@ export default function RenderBlock({ video }) {
 
       currentPhase = "renderização do vídeo no navegador";
       setRender({ status: "renderizando", url: "", error: "", progress: 74, detail: "FASE 6/6 · Montando o vídeo vertical com imagens, narração e legendas." });
-      const webm = await recordNarratedSlideshow({ ...currentVideo, intro_callout_enabled: introCalloutEnabled, outro_callout_enabled: outroCalloutEnabled }, (progress, detail) => {
+      const webm = await recordNarratedSlideshow({ ...currentVideo, output_resolution: outputResolution, intro_callout_enabled: introCalloutEnabled, outro_callout_enabled: outroCalloutEnabled }, (progress, detail) => {
         const overall = 74 + Math.round((progress / 75) * 16);
         setRender({ status: "renderizando", url: "", error: "", progress: overall, detail: "FASE 6/6 · " + detail });
       });
@@ -206,7 +218,7 @@ export default function RenderBlock({ video }) {
       const mp4 = await convertWebmToMp4(webm, (progress, detail) => {
         const overall = 90 + Math.round(((progress - 76) / 22) * 7);
         setRender({ status: "renderizando", url: "", error: "", progress: Math.min(97, overall), detail: "FASE 6/6 · " + detail });
-      });
+      }, outputResolution);
 
       currentPhase = "upload e gravação do MP4 no Supabase";
       setRender({ status: "renderizando", url: "", error: "", progress: 98, detail: "Validando o MP4 e salvando o arquivo final." });
@@ -351,7 +363,7 @@ export default function RenderBlock({ video }) {
           {busy ? <Loader2 className="size-4 animate-spin" /> : render.status === "falhou" ? <AlertCircle className="size-4" /> : <Film className="size-4" />}
           {render.status === "falhou" ? "Falha na produção do vídeo" : busy ? "Produzindo automaticamente…" : "Preparando produção…"}
         </div>
-        {busy && (
+        {render.status !== "pronto" && render.status !== "falhou" && (
           <div className="rounded-xl border border-border bg-card/60 p-3">
             <div className="mb-2 flex items-center justify-between gap-3 text-[11px]">
               <span className="font-medium text-foreground">Progresso da produção · 6 etapas</span>
@@ -376,7 +388,7 @@ export default function RenderBlock({ video }) {
         )}
         {!busy && render.status !== "falhou" && (
           <p className="text-center font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
-            MP4 vertical 9:16 · duração entre 2 e 5 minutos
+            MP4 vertical 9:16 · {activeVideo?.output_resolution === "720p" ? "720 × 1280" : "1080 × 1920"} · duração entre 2 e 5 minutos
           </p>
         )}
       </div>
