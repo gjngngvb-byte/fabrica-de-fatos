@@ -75,7 +75,30 @@ export default function RenderBlock({ video }) {
       if (wordCount < 280 || !Array.isArray(currentVideo.scenes) ||
           currentVideo.scenes.length !== TOTAL_SCENES || !scenesMatchScript) {
         setRender({ status: "renderizando", url: "", error: "", progress: 2, detail: "FASE 1/6 · Conferindo a correspondência entre roteiro e cenas e preparando o roteiro correto." });
-        const scriptResult = await createScript({ data: { videoId: video.id, sceneCount: 0 } });
+        let progressPollBusy = false;
+        const progressPoll = setInterval(async () => {
+          if (progressPollBusy) return;
+          progressPollBusy = true;
+          try {
+            const { data: progressRow } = await supabase.from("videos")
+              .select("render_error").eq("id", video.id).maybeSingle();
+            const progressMessage = String(progressRow?.render_error || "");
+            if (progressMessage.startsWith("[SCRIPT_PROGRESS]")) {
+              const detail = progressMessage.replace("[SCRIPT_PROGRESS]", "").trim();
+              setRender({
+                status: "renderizando", url: "", error: "", progress: 2,
+                detail: "FASE 1/6 · Preparação do roteiro · " + detail,
+              });
+            }
+          } catch {}
+          finally { progressPollBusy = false; }
+        }, 1000);
+        let scriptResult;
+        try {
+          scriptResult = await createScript({ data: { videoId: video.id, sceneCount: 0 } });
+        } finally {
+          clearInterval(progressPoll);
+        }
         currentVideo = scriptResult?.video || scriptResult;
         if (!currentVideo?.script || !Array.isArray(currentVideo.scenes) || currentVideo.scenes.length !== TOTAL_SCENES) {
           throw new Error("A IA não retornou um roteiro completo dividido em exatamente 15 partes.");
