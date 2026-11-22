@@ -4,7 +4,7 @@ import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
 import { Download, Film, Loader2, CheckCircle2, AlertCircle, RefreshCw } from "lucide-react";
 import PhonePlayer from "@/components/studio/PhonePlayer";
-import { generateVideoKit, getStudio } from "@/lib/video-fns";
+import { generateVideoKit, getStudio, createR2VideoUpload, finalizeR2VideoUpload } from "@/lib/video-fns";
 import { generateSceneImage, generateSceneSpeech, finalizeVideoAssets } from "@/lib/render-fns";
 import { recordNarratedSlideshow, convertWebmToMp4 } from "@/lib/video-composer";
 import { supabase } from "@/lib/supabase";
@@ -20,6 +20,8 @@ export default function RenderBlock({ video }) {
   const router = useRouter();
   const createScript = useServerFn(generateVideoKit);
   const loadStudio = useServerFn(getStudio);
+  const createR2Upload = useServerFn(createR2VideoUpload);
+  const finalizeR2Upload = useServerFn(finalizeR2VideoUpload);
   const createImage = useServerFn(generateSceneImage);
   const createSpeech = useServerFn(generateSceneSpeech);
   const finalizeAssets = useServerFn(finalizeVideoAssets);
@@ -344,40 +346,28 @@ export default function RenderBlock({ video }) {
       const mp4 = await convertWebmToMp4(webm, (progress, detail) => {
         const overall = 90 + Math.round(((progress - 76) / 22) * 7);
         setRender({ status: "renderizando", url: "", error: "", progress: Math.min(97, overall), detail: "FASE 6/6 · " + detail });
-      }, outputResolution, Number(audioResult.audio_duration || 300));
+      }, outputResolution);
 
-      currentPhase = "upload e gravação do MP4 no Supabase";
-      setRender({ status: "renderizando", url: "", error: "", progress: 98, detail: "Validando o MP4 e salvando o arquivo final." });
-      const { data: authData, error: authError } = await supabase.auth.getUser();
-      if (authError || !authData?.user) throw new Error("Sua sessão expirou. Entre novamente para salvar o MP4.");
-      const maxAllowedBytes = 48 * 1024 * 1024;
-      if (mp4.size > maxAllowedBytes) {
-        throw new Error("O MP4 tem " + (mp4.size / 1024 / 1024).toFixed(1) +
-          " MiB e excede a margem segura do armazenamento gratuito (50 MiB). A compressão precisa ser refeita.");
-      }
-      const path = authData.user.id + "/" + video.id + ".mp4";
-      const { error: uploadError } = await supabase.storage.from("assets").upload(path, mp4, {
-        upsert: true, contentType: "video/mp4",
-      });
-      if (uploadError) throw new Error("Falha ao armazenar MP4: " + uploadError.message);
-      const { data: signed, error: signedError } = await supabase.storage.from("assets").createSignedUrl(path, 60 * 60 * 24 * 30);
-      if (signedError) throw new Error("MP4 salvo, mas não foi possível criar o link: " + signedError.message);
-
+      currentPhase = "upload e gravação do MP4 no Cloudflare R2";
+      setRender({ status: "renderizando", url: "", error: "", progress: 98, detail: "Validando o MP4 e enviando o arquivo original ao Cloudflare R2." });
       const duration = Number(audioResult.audio_duration || 0);
-      const { data: updated, error: updateError } = await supabase.from("videos").update({
-        mp4_url: signed.signedUrl,
-        render_status: "pronto",
-        render_error: "Longform MP4 | " + Math.round(duration) + "s | 17 imagens (1 chamada inicial + 15 cenas + 1 chamada final) + narração contínua + legendas sincronizadas",
-        status: "pronto",
-        error: "",
-      }).eq("id", video.id).eq("created_by", authData.user.id).select("*").single();
-      if (updateError) throw new Error("MP4 criado, mas o estado do vídeo não foi atualizado: " + updateError.message);
+      const upload = await createR2Upload({ data: { videoId: video.id, size: mp4.size } });
+      const uploadResponse = await fetch(upload.uploadUrl, {
+        method: "PUT",
+        headers: upload.requiredHeaders,
+        body: mp4,
+      });
+      if (!uploadResponse.ok) {
+        const detail = await uploadResponse.text().catch(() => "");
+        throw new Error("Falha ao enviar MP4 ao Cloudflare R2 (HTTP " + uploadResponse.status + "). " + detail.slice(0, 300));
+      }
+      const saved = await finalizeR2Upload({ data: { videoId: video.id, key: upload.key, duration } });
       retryAttemptRef.current = 0;
       if (retryTimerRef.current) {
         clearTimeout(retryTimerRef.current);
         retryTimerRef.current = null;
       }
-      setRender({ status: "pronto", url: updated.mp4_url, error: "", progress: 100, detail: "MP4 validado e salvo." });
+      setRender({ status: "pronto", url: saved.downloadUrl, error: "", progress: 100, detail: "MP4 validado e salvo no Cloudflare R2." });
       toast.success("Vídeo completo de " + Math.round(duration / 60 * 10) / 10 + " minutos pronto!");
       router.invalidate();
     } catch (error) {

@@ -91,7 +91,47 @@ export const getVideo = createServerFn({ method: "POST" })
     const { data: video, error } = await auth.supabase.from("videos").select("*")
       .eq("id", data.videoId).eq("created_by", auth.user.id).maybeSingle();
     if (error) throw error;
+    if (video?.mp4_url?.startsWith("r2://")) {
+      const { data: signed, error: signError } = await auth.supabase.functions.invoke("r2-storage", {
+        body: { action: "get_download", key: video.mp4_url.slice(5) },
+      });
+      if (signError || signed?.error || !signed?.downloadUrl) {
+        throw new Error(await edgeFunctionMessage(signError, signed?.error || "Não foi possível abrir o MP4 armazenado no R2."));
+      }
+      video.mp4_url = signed.downloadUrl;
+    }
     return video;
+  });
+
+export const createR2VideoUpload = createServerFn({ method: "POST" })
+  .middleware([requireUser])
+  .validator(z.object({ videoId: z.string().uuid(), size: z.number().int().min(65536).max(5 * 1024 * 1024 * 1024) }))
+  .handler(async ({ data, context }) => {
+    const auth = await requireContext(context);
+    const { data: owned, error: ownershipError } = await auth.supabase.from("videos").select("id")
+      .eq("id", data.videoId).eq("created_by", auth.user.id).maybeSingle();
+    if (ownershipError || !owned) throw new Error("Vídeo não encontrado.");
+    const { data: result, error } = await auth.supabase.functions.invoke("r2-storage", {
+      body: { action: "create_upload", videoId: data.videoId, size: data.size },
+    });
+    if (error || result?.error || !result?.uploadUrl) {
+      throw new Error(await edgeFunctionMessage(error, result?.error || "Não foi possível preparar o upload no R2."));
+    }
+    return result;
+  });
+
+export const finalizeR2VideoUpload = createServerFn({ method: "POST" })
+  .middleware([requireUser])
+  .validator(z.object({ videoId: z.string().uuid(), key: z.string().min(1).max(500), duration: z.number().min(0).max(360) }))
+  .handler(async ({ data, context }) => {
+    const auth = await requireContext(context);
+    const { data: result, error } = await auth.supabase.functions.invoke("r2-storage", {
+      body: { action: "finalize_upload", videoId: data.videoId, key: data.key, duration: data.duration },
+    });
+    if (error || result?.error || !result?.video) {
+      throw new Error(await edgeFunctionMessage(error, result?.error || "Não foi possível finalizar o armazenamento no R2."));
+    }
+    return result;
   });
 
 export const deleteVideo = createServerFn({ method: "POST" })
@@ -105,8 +145,15 @@ export const deleteVideo = createServerFn({ method: "POST" })
     if (lookupError) throw lookupError;
     if (!video) throw new Error("Vídeo não encontrado ou já excluído.");
 
+    if (String(video.mp4_url || "").startsWith("r2://")) {
+      const { data: removed, error: removeError } = await supabase.functions.invoke("r2-storage", {
+        body: { action: "delete_object", key: video.mp4_url.slice(5) },
+      });
+      if (removeError || removed?.error) throw new Error(await edgeFunctionMessage(removeError, removed?.error || "Não foi possível excluir o MP4 do R2."));
+    }
+
     const paths = new Set([
-      userId + "/" + video.id + ".mp4",
+      ...(String(video.mp4_url || "").startsWith("r2://") ? [] : [userId + "/" + video.id + ".mp4"]),
       userId + "/" + video.id + "-narration-full.wav",
     ]);
     for (const scene of (Array.isArray(video.scenes) ? video.scenes : [])) {
@@ -183,7 +230,7 @@ export const generateVideoKit = createServerFn({ method: "POST" })
     const { data: video, error: lookupError } = await supabase.from("videos").select("id")
       .eq("id", data.videoId).eq("created_by", user.id).single();
     if (lookupError || !video) throw new Error("Vídeo não encontrado.");
-    const { data: result, error } = await supabase.functions.invoke("generate-video-kit", {
+    const { data: result, error } = await supabase.functions.invoke("generate-video-kit-preview", {
       body: { videoId: data.videoId, action: "generate" },
     });
     if (error) throw new Error(await edgeFunctionMessage(error, "Falha ao gerar o roteiro."));
@@ -196,7 +243,7 @@ export const generateNarration = createServerFn({ method: "POST" })
   .validator(z.object({ videoId: z.string().uuid() }))
   .handler(async ({ data, context }) => {
     const auth = await requireContext(context);
-    const { data: result, error } = await auth.supabase.functions.invoke("generate-video-kit", {
+    const { data: result, error } = await auth.supabase.functions.invoke("generate-video-kit-preview", {
       body: { videoId: data.videoId, action: "generate" },
     });
     if (error) throw new Error(error.message || "Falha ao gerar roteiro e narração.");

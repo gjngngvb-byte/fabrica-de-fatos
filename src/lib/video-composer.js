@@ -140,18 +140,42 @@ async function loadBitmap(url) {
   }
 }
 
-function drawCover(context, bitmap, progress, alpha = 1, width = WIDTH, height = HEIGHT) {
+function drawCover(context, bitmap, progress, alpha = 1, width = WIDTH, height = HEIGHT, motionSeed = 0) {
   if (!bitmap || !bitmap.complete || !bitmap.naturalWidth || !bitmap.naturalHeight) {
     throw new Error("Uma imagem da montagem foi desconectada ou perdeu os dados antes da renderização.");
   }
   const imageWidth = bitmap.naturalWidth;
   const imageHeight = bitmap.naturalHeight;
-  const scale = Math.max(width / imageWidth, height / imageHeight) * (1.02 + 0.07 * progress);
+  const t = Math.max(0, Math.min(1, progress));
+  // Slow Ken Burns-style camera motion with clearly visible lateral travel.
+  // Every scene pans horizontally; selected scenes also add a gentle vertical
+  // drift or a very subtle zoom so the movement never feels like a static zoom.
+  const motions = [
+    { fromX: -1, fromY: 0, toX: 1, toY: 0, zoom: "none" },
+    { fromX: 1, fromY: -0.25, toX: -1, toY: 0.25, zoom: "none" },
+    { fromX: -1, fromY: 1, toX: 1, toY: -1, zoom: "in" },
+    { fromX: 1, fromY: 0, toX: -1, toY: 0, zoom: "out" },
+    { fromX: -1, fromY: -1, toX: 1, toY: 1, zoom: "none" },
+    { fromX: 1, fromY: 0.5, toX: -1, toY: -0.5, zoom: "in" },
+    { fromX: -1, fromY: 0, toX: 1, toY: 0, zoom: "out" },
+  ];
+  const motion = motions[Math.abs(Number(motionSeed) || 0) % motions.length];
+  const zoomProgress = motion.zoom === "out" ? 1 - t : t;
+  const zoomAmount = motion.zoom === "none" ? 1.022 : 1.015 + zoomProgress * 0.018;
+  const scale = Math.max(width / imageWidth, height / imageHeight) * zoomAmount;
   const drawWidth = imageWidth * scale;
   const drawHeight = imageHeight * scale;
-  const drift = Math.sin(progress * Math.PI) * 12 * (width / 720);
-  const x = (width - drawWidth) / 2 + drift;
-  const y = (height - drawHeight) / 2;
+  const horizontalRoom = Math.max(0, drawWidth - width);
+  const verticalRoom = Math.max(0, drawHeight - height);
+  // Smooth ease-in/ease-out prevents abrupt starts and stops. The lateral
+  // travel is now large enough to be seen on a phone, without reaching the crop edge.
+  const ease = t * t * (3 - 2 * t);
+  const travelX = Math.min(horizontalRoom * 0.5, width * 0.12);
+  const travelY = Math.min(verticalRoom * 0.5, height * 0.055);
+  const directionX = motion.fromX + (motion.toX - motion.fromX) * ease;
+  const directionY = motion.fromY + (motion.toY - motion.fromY) * ease;
+  const x = (width - drawWidth) / 2 + directionX * travelX;
+  const y = (height - drawHeight) / 2 + directionY * travelY;
   context.globalAlpha = alpha;
   try {
     context.drawImage(bitmap, x, y, drawWidth, drawHeight);
@@ -160,42 +184,86 @@ function drawCover(context, bitmap, progress, alpha = 1, width = WIDTH, height =
   }
 }
 
+function pickAccentColor(bitmap) {
+  try {
+    const sample = document.createElement("canvas");
+    sample.width = 24;
+    sample.height = 24;
+    const sampleContext = sample.getContext("2d", { willReadFrequently: true });
+    if (!sampleContext) return "#FFE36E";
+    sampleContext.drawImage(bitmap, 0, 0, 24, 24);
+    const pixels = sampleContext.getImageData(0, 0, 24, 24).data;
+    let red = 0, green = 0, blue = 0, count = 0;
+    for (let i = 0; i < pixels.length; i += 4) {
+      if (pixels[i + 3] < 100) continue;
+      red += pixels[i];
+      green += pixels[i + 1];
+      blue += pixels[i + 2];
+      count++;
+    }
+    if (!count) return "#FFE36E";
+    red /= count * 255;
+    green /= count * 255;
+    blue /= count * 255;
+    const max = Math.max(red, green, blue);
+    const min = Math.min(red, green, blue);
+    const delta = max - min;
+    let hue = 45;
+    if (delta > 0.025) {
+      if (max === red) hue = 60 * (((green - blue) / delta) % 6);
+      else if (max === green) hue = 60 * ((blue - red) / delta + 2);
+      else hue = 60 * ((red - green) / delta + 4);
+    }
+    hue = (hue + 360) % 360;
+    return "hsl(" + Math.round(hue) + ", 88%, 68%)";
+  } catch {
+    return "#FFE36E";
+  }
+}
 
-function drawCalloutOverlay(context, { title = "", message = "", channelName = "" } = {}, width = WIDTH, height = HEIGHT, alpha = 1) {
+function drawCalloutOverlay(context, { title = "", message = "", channelName = "", accentColor = "#FFE36E" } = {}, width = WIDTH, height = HEIGHT, alpha = 1) {
   const scale = width / 720;
   const maxWidth = width - 112 * scale;
   const entries = [];
-  if (title) entries.push({ text: title, fontSize: 38, weight: "bold", gap: 12 });
-  if (message) entries.push({ text: message, fontSize: 31, weight: "600", gap: 10 });
-  if (channelName) entries.push({ text: "no " + channelName, fontSize: 29, weight: "bold", gap: 0 });
+  if (title) entries.push({ text: title, fontSize: 40, color: accentColor, weight: "bold", gap: 12 });
+  if (message) entries.push({ text: message, fontSize: 32, color: "#FFFFFF", weight: "bold", gap: 10 });
+  if (channelName) entries.push({ text: "no " + channelName, fontSize: 29, color: accentColor, weight: "bold", gap: 0 });
   if (!entries.length) return;
 
   context.save();
   context.globalAlpha = alpha;
   context.textAlign = "center";
   context.textBaseline = "middle";
+  const fontFamily = "'Trebuchet MS', 'Arial Rounded MT Bold', sans-serif";
   const prepared = entries.map((entry) => {
-    context.font = entry.weight + " " + Math.round(entry.fontSize * scale) + "px Arial, sans-serif";
+    context.font = entry.weight + " " + Math.round(entry.fontSize * scale) + "px " + fontFamily;
     return { ...entry, lines: wrapText(context, entry.text, maxWidth - 36 * scale, 5) };
   });
   const lineHeights = prepared.map((entry) => entry.fontSize * 1.22 * scale);
   const contentHeight = prepared.reduce((sum, entry, i) =>
     sum + entry.lines.length * lineHeights[i] + entry.gap * scale, 0);
-  const padding = 24 * scale;
+  const padding = 25 * scale;
   const boxHeight = contentHeight + padding * 2;
   const boxY = height - 220 * scale - boxHeight;
-  context.fillStyle = "rgba(0,0,0,0.68)";
-  drawRoundedRect(context, 38 * scale, boxY, width - 76 * scale, boxHeight, 20 * scale);
-  context.fillStyle = "#ffffff";
-  let cursorY = boxY + padding;
+  context.fillStyle = "rgba(0,0,0,0.70)";
+  drawRoundedRect(context, 38 * scale, boxY, width - 76 * scale, boxHeight, 22 * scale);
+  context.fill();
+  // A restrained accent strip gives the callout a designed, finished edge.
+  context.fillStyle = accentColor;
+  drawRoundedRect(context, width / 2 - 42 * scale, boxY + 7 * scale, 84 * scale, 5 * scale, 3 * scale);
+  context.fill();
+  let cursorY = boxY + padding + 5 * scale;
   prepared.forEach((entry, i) => {
-    context.font = entry.weight + " " + Math.round(entry.fontSize * scale) + "px Arial, sans-serif";
+    context.font = entry.weight + " " + Math.round(entry.fontSize * scale) + "px " + fontFamily;
     const lineHeight = lineHeights[i];
     entry.lines.forEach((line) => {
       const y = cursorY + lineHeight / 2;
-      context.strokeStyle = "rgba(0,0,0,0.9)";
-      context.lineWidth = 3 * scale;
+      context.shadowColor = "rgba(0,0,0,0.55)";
+      context.shadowBlur = 7 * scale;
+      context.lineWidth = 2.5 * scale;
+      context.strokeStyle = "rgba(0,0,0,0.85)";
       context.strokeText(line, width / 2, y, maxWidth);
+      context.fillStyle = entry.color;
       context.fillText(line, width / 2, y, maxWidth);
       cursorY += lineHeight;
     });
@@ -228,58 +296,103 @@ function drawFrame(context, scenes, bitmaps, time, callouts = {}, width = WIDTH,
   context.fillRect(0, 0, width, height);
 
   if (introActive) {
-    drawCover(context, bitmaps[callouts.introIndex], time / Math.max(0.1, introDuration), 1, width, height);
+    drawCover(context, bitmaps[callouts.introIndex], time / Math.max(0.1, introDuration), 1, width, height, 15);
     const introFade = time >= introDuration - 0.45
       ? Math.max(0, 1 - (time - (introDuration - 0.45)) / 0.45)
       : 1;
     if (time >= introDuration - 0.45) {
-      drawCover(context, bitmaps[0], 0, 1 - introFade, width, height);
+      drawCover(context, bitmaps[0], 0, 1 - introFade, width, height, 0);
     }
     drawCalloutOverlay(context, {
       title: callouts.introTitle,
       message: callouts.introText,
+      accentColor: callouts.accentColor,
     }, width, height, introFade);
   } else if (outroActive) {
-    drawCover(context, bitmaps[index], progress, 1, width, height);
-    drawCover(context, bitmaps[callouts.outroIndex], (time - outroStart) / Math.max(0.1, outroDuration), Math.min(1, (time - outroStart) / 0.45), width, height);
+    drawCover(context, bitmaps[index], progress, 1, width, height, index);
+    drawCover(context, bitmaps[callouts.outroIndex], (time - outroStart) / Math.max(0.1, outroDuration), Math.min(1, (time - outroStart) / 0.45), width, height, 16);
     drawCalloutOverlay(context, {
       message: callouts.outroText,
       channelName: callouts.channelName,
+      accentColor: callouts.accentColor,
     }, width, height);
   } else {
-    drawCover(context, bitmaps[index], progress, 1, width, height);
+    drawCover(context, bitmaps[index], progress, 1, width, height, index);
     const nextScene = scenes[index + 1];
     const transitionStart = Math.max(start, end - 0.55);
     if (nextScene && sceneTime >= transitionStart) {
       const nextProgress = Math.min(1, (sceneTime - transitionStart) / 0.55);
-      drawCover(context, bitmaps[index + 1], 0, nextProgress, width, height);
+      drawCover(context, bitmaps[index + 1], 0, nextProgress, width, height, index + 1);
     }
   }
 
-  // Captions remain synchronized to the original audio clock.
+  // Reveal each word progressively inside its timed phrase. Phrase timings
+  // are already placed on the narration timeline by the caption builder.
   const caption = (scene.captions || []).find((item) =>
     time >= Number(item.start_seconds) && time < Number(item.end_seconds)
   );
   if (!introActive && !outroActive && caption?.text) {
     context.save();
     const scale = width / 720;
-    context.font = "bold " + Math.round(43 * scale) + "px Arial, sans-serif";
-    context.textAlign = "center";
+    const fontFamily = "'Trebuchet MS', 'Arial Rounded MT Bold', sans-serif";
+    context.font = "bold " + Math.round(43 * scale) + "px " + fontFamily;
+    context.textAlign = "left";
     context.textBaseline = "middle";
-    const lines = wrapText(context, caption.text, width - 104 * scale);
-    const lineHeight = 55 * scale;
-    const boxHeight = lines.length * lineHeight + 42 * scale;
+    const allWords = String(caption.text).trim().split(/\\s+/).filter(Boolean);
+    const totalChars = Math.max(1, allWords.reduce((sum, word) => sum + word.length, 0));
+    const phraseDuration = Math.max(0.05, Number(caption.end_seconds) - Number(caption.start_seconds));
+    const phraseProgress = Math.max(0, Math.min(1, (time - Number(caption.start_seconds)) / phraseDuration));
+    let accumulatedChars = 0;
+    let visibleCount = 0;
+    for (const word of allWords) {
+      accumulatedChars += word.length;
+      if (accumulatedChars / totalChars <= phraseProgress || visibleCount === 0) visibleCount++;
+      else break;
+    }
+    const visibleWords = allWords.slice(0, Math.max(1, visibleCount));
+    const maxTextWidth = width - 142 * scale;
+    const lines = [];
+    let line = [];
+    let lineWidth = 0;
+    for (const word of visibleWords) {
+      const wordWidth = context.measureText(word).width;
+      const spaceWidth = context.measureText(" ").width;
+      const nextWidth = lineWidth + (line.length ? spaceWidth : 0) + wordWidth;
+      if (nextWidth > maxTextWidth && line.length) {
+        lines.push(line);
+        line = [word];
+        lineWidth = wordWidth;
+      } else {
+        line.push(word);
+        lineWidth = nextWidth;
+      }
+    }
+    if (line.length) lines.push(line);
+    const lineHeight = 54 * scale;
+    const boxHeight = lines.length * lineHeight + 38 * scale;
     const boxY = height - 280 * scale - boxHeight / 2;
-    context.fillStyle = "rgba(0,0,0,0.68)";
+    context.fillStyle = "rgba(0,0,0,0.70)";
     drawRoundedRect(context, 38 * scale, boxY, width - 76 * scale, boxHeight, 20 * scale);
     context.fill();
-    context.fillStyle = "#ffffff";
-    lines.forEach((line, lineIndex) => {
-      context.strokeStyle = "rgba(0,0,0,0.9)";
-      context.lineWidth = 3 * scale;
-      const y = boxY + 22 * scale + lineHeight * lineIndex + lineHeight / 2;
-      context.strokeText(line, width / 2, y, width - 110 * scale);
-      context.fillText(line, width / 2, y, width - 110 * scale);
+    // Small golden accent at the top ties the subtitles to the callout design.
+    context.fillStyle = callouts.accentColor || "#FFE36E";
+    drawRoundedRect(context, width / 2 - 26 * scale, boxY + 6 * scale, 52 * scale, 4 * scale, 2 * scale);
+    context.fill();
+    lines.forEach((wordsInLine, lineIndex) => {
+      const widths = wordsInLine.map((word) => context.measureText(word).width);
+      const gap = context.measureText(" ").width;
+      const totalWidth = widths.reduce((sum, value) => sum + value, 0) + gap * (wordsInLine.length - 1);
+      let x = (width - totalWidth) / 2;
+      const y = boxY + 24 * scale + lineHeight * lineIndex + lineHeight / 2;
+      wordsInLine.forEach((word, wordIndex) => {
+        context.lineWidth = 2.5 * scale;
+        context.strokeStyle = "rgba(0,0,0,0.92)";
+        context.strokeText(word, x, y);
+        context.fillStyle = (wordIndex === wordsInLine.length - 1 && lineIndex === lines.length - 1)
+          ? (callouts.accentColor || "#FFE36E") : "#FFFFFF";
+        context.fillText(word, x, y);
+        x += widths[wordIndex] + gap;
+      });
     });
     context.restore();
   }
@@ -357,6 +470,7 @@ export async function recordNarratedSlideshow(video, onProgress = () => {}) {
       images.push(await loadBitmap(outroCalloutUrl));
       onProgress(Math.round((images.length / totalImageCount) * 8), "Carregando imagem extra da chamada final");
     }
+    callouts.accentColor = pickAccentColor(images[0]);
 
     const audioResponse = await fetch(video.audio_url, {
       cache: "no-store",
@@ -375,15 +489,10 @@ export async function recordNarratedSlideshow(video, onProgress = () => {}) {
       throw new Error("A narração completa tem " + Math.round(audioBuffer.duration) + " segundos. O limite é de 2 a 6 minutos, incluindo as chamadas.");
     }
 
-    // Supabase Free accepts files up to 50 MiB. Keep a safety margin for MP4
-    // container overhead and AAC audio while preserving the selected resolution.
-    const maxUploadBytes = 44 * 1024 * 1024;
-    const audioBitrate = 96_000;
-    const targetTotalBitrate = Math.floor((maxUploadBytes * 8 * 0.88) / audioBuffer.duration);
-    const uploadSafeVideoBitrate = Math.max(500_000, targetTotalBitrate - audioBitrate);
+    // Bitrate is selected for visual quality, not to fit a storage-provider limit.
     const outputResolution = video.output_resolution === "720p"
-      ? { width: 720, height: 1280, videoBitrate: uploadSafeVideoBitrate }
-      : { width: 1080, height: 1920, videoBitrate: uploadSafeVideoBitrate };
+      ? { width: 720, height: 1280, videoBitrate: 5_000_000 }
+      : { width: 1080, height: 1920, videoBitrate: 8_000_000 };
     const canvas = document.createElement("canvas");
     canvas.width = outputResolution.width;
     canvas.height = outputResolution.height;
@@ -515,23 +624,113 @@ export async function recordNarratedSlideshow(video, onProgress = () => {}) {
   }
 }
 
-async function fetchCoreAsset(url, mimeType, timeoutMs = 45000) {
+async function fetchCoreAsset(url, mimeType, timeoutMs = 45000, parentSignal) {
   const controller = new AbortController();
+  const abortFromParent = () => controller.abort();
+  if (parentSignal?.aborted) controller.abort();
+  else parentSignal?.addEventListener("abort", abortFromParent, { once: true });
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const response = await fetch(url, { signal: controller.signal, cache: "force-cache" });
-    if (!response.ok) throw new Error("HTTP " + response.status + " ao baixar " + url);
+    if (!response.ok) throw new Error("HTTP " + response.status + " ao baixar o conversor.");
     const blob = await response.blob();
-    if (!blob.size) throw new Error("O arquivo do conversor veio vazio: " + url);
+    if (!blob.size) throw new Error("O arquivo do conversor veio vazio.");
     return URL.createObjectURL(new Blob([blob], { type: mimeType }));
   } catch (error) {
     if (error?.name === "AbortError") {
-      throw new Error("Tempo limite ao baixar o conversor MP4. O servidor externo não respondeu.");
+      throw new Error("Tempo limite ao baixar um componente do conversor MP4.");
     }
     throw error;
   } finally {
     clearTimeout(timeout);
+    parentSignal?.removeEventListener("abort", abortFromParent);
   }
+}
+
+async function loadFfmpegCoreFromMirrors(onProgress) {
+  const cdnBases = [
+    "https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.10/dist/esm",
+    "https://fastly.jsdelivr.net/npm/@ffmpeg/core@0.12.10/dist/esm",
+    "https://gcore.jsdelivr.net/npm/@ffmpeg/core@0.12.10/dist/esm",
+    "https://testingcf.jsdelivr.net/npm/@ffmpeg/core@0.12.10/dist/esm",
+    "https://unpkg.com/@ffmpeg/core@0.12.10/dist/esm",
+  ];
+  const controllers = [];
+  const attempts = cdnBases.map(async (base, index) => {
+    const controller = new AbortController();
+    controllers.push(controller);
+    const [coreResult, wasmResult] = await Promise.allSettled([
+      fetchCoreAsset(base + "/ffmpeg-core.js", "text/javascript", 35000, controller.signal),
+      fetchCoreAsset(base + "/ffmpeg-core.wasm", "application/wasm", 55000, controller.signal),
+    ]);
+    if (coreResult.status === "rejected" || wasmResult.status === "rejected") {
+      controller.abort();
+      if (coreResult.status === "fulfilled") URL.revokeObjectURL(coreResult.value);
+      if (wasmResult.status === "fulfilled") URL.revokeObjectURL(wasmResult.value);
+      const reason = coreResult.status === "rejected" ? coreResult.reason : wasmResult.reason;
+      throw new Error("Servidor " + (index + 1) + ": " + (reason?.message || String(reason)));
+    }
+    return { base, coreURL: coreResult.value, wasmURL: wasmResult.value };
+  });
+
+  try {
+    onProgress(76, "Testando 5 servidores de conversão em paralelo. O primeiro disponível será utilizado.");
+    const winner = await Promise.any(attempts);
+    controllers.forEach((controller) => controller.abort());
+    const settled = await Promise.allSettled(attempts);
+    for (const result of settled) {
+      if (result.status === "fulfilled" && result.value.base !== winner.base) {
+        URL.revokeObjectURL(result.value.coreURL);
+        URL.revokeObjectURL(result.value.wasmURL);
+      }
+    }
+    onProgress(77, "Conversor MP4 carregado com sucesso.");
+    return winner;
+  } catch (error) {
+    controllers.forEach((controller) => controller.abort());
+    const settled = await Promise.allSettled(attempts);
+    for (const result of settled) {
+      if (result.status === "fulfilled") {
+        URL.revokeObjectURL(result.value.coreURL);
+        URL.revokeObjectURL(result.value.wasmURL);
+      }
+    }
+    const details = settled
+      .filter((result) => result.status === "rejected")
+      .map((result) => result.reason?.message || String(result.reason))
+      .join(" | ");
+    throw new Error("Nenhum dos 5 servidores conseguiu fornecer o conversor MP4. " + details.slice(0, 700));
+  }
+}
+
+async function validateMp4Blob(blob, label = "MP4") {
+  if (!(blob instanceof Blob) || blob.size < 64 * 1024) {
+    throw new Error(label + " ficou vazio ou pequeno demais.");
+  }
+  const headSize = Math.min(blob.size, 2 * 1024 * 1024);
+  const tailStart = Math.max(0, blob.size - 2 * 1024 * 1024);
+  const [head, tail] = await Promise.all([
+    blob.slice(0, headSize).arrayBuffer(),
+    blob.slice(tailStart).arrayBuffer(),
+  ]);
+  const first = new Uint8Array(head);
+  if (first.length < 12 || String.fromCharCode(...first.slice(4, 8)) !== "ftyp") {
+    throw new Error(label + " não possui um cabeçalho MP4 válido.");
+  }
+  const bytes = new Uint8Array(first.length + tail.byteLength);
+  bytes.set(first, 0);
+  bytes.set(new Uint8Array(tail), first.length);
+  const hasBox = (tag) => {
+    const a = tag.charCodeAt(0), b = tag.charCodeAt(1), c = tag.charCodeAt(2), d = tag.charCodeAt(3);
+    for (let i = 4; i <= bytes.length - 4; i++) {
+      if (bytes[i] === a && bytes[i + 1] === b && bytes[i + 2] === c && bytes[i + 3] === d) return true;
+    }
+    return false;
+  };
+  if (!hasBox("moov") || !hasBox("mdat")) {
+    throw new Error(label + " parece incompleto: faltam estruturas internas obrigatórias do MP4.");
+  }
+  return true;
 }
 
 async function withTimeout(promise, timeoutMs, message) {
@@ -548,22 +747,15 @@ async function withTimeout(promise, timeoutMs, message) {
   }
 }
 
-export async function convertWebmToMp4(webm, onProgress = () => {}, outputResolution = "1080p", durationSeconds = 300) {
+export async function convertWebmToMp4(webm, onProgress = () => {}, outputResolution = "1080p") {
   if (!(webm instanceof Blob) || webm.size < 64 * 1024) {
     throw new Error("A gravação de vídeo não contém dados suficientes para converter.");
   }
-  const maxUploadBytes = 44 * 1024 * 1024;
   const isMp4Input = webm.type.includes("mp4");
-  if (isMp4Input) {
-    const header = new Uint8Array(await webm.slice(0, 16).arrayBuffer());
-    if (String.fromCharCode(...header.slice(4, 8)) !== "ftyp") throw new Error("O navegador declarou MP4, mas o arquivo não passou na validação de assinatura.");
-    if (webm.size <= maxUploadBytes) {
-      onProgress(98, "MP4 direto validado e dentro do limite do armazenamento");
-      return webm;
-    }
-    onProgress(76, "MP4 ultrapassou o limite gratuito. Reduzindo o tamanho para armazenamento seguro.");
-  }
-  onProgress(76, "Ativando conversor MP4 alternativo (FFmpeg no navegador)");
+  // Always pass browser recordings through FFmpeg. Native MediaRecorder MP4
+  // output can have incomplete indexes/finalization on some browser versions.
+  // Re-encoding produces a finalized MP4 with fast-start metadata.
+  onProgress(76, "Finalizando e validando o vídeo em MP4 de alta qualidade (FFmpeg no navegador)");
   const { FFmpeg } = await withTimeout(
     import("@ffmpeg/ffmpeg"),
     30000,
@@ -573,32 +765,9 @@ export async function convertWebmToMp4(webm, onProgress = () => {}, outputResolu
   let coreURL = "";
   let wasmURL = "";
   try {
-    const cdnBases = [
-      "https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.10/dist/esm",
-      "https://fastly.jsdelivr.net/npm/@ffmpeg/core@0.12.10/dist/esm",
-      "https://unpkg.com/@ffmpeg/core@0.12.10/dist/esm",
-    ];
-    let lastError = null;
-    for (const base of cdnBases) {
-      try {
-        onProgress(76, "Baixando conversor MP4 (servidor " + (cdnBases.indexOf(base) + 1) + "/3)");
-        coreURL = await fetchCoreAsset(base + "/ffmpeg-core.js", "text/javascript");
-        onProgress(76, "Baixando componentes MP4 (servidor " + (cdnBases.indexOf(base) + 1) + "/3)");
-        wasmURL = await fetchCoreAsset(base + "/ffmpeg-core.wasm", "application/wasm", 90000);
-        lastError = null;
-        break;
-      } catch (error) {
-        lastError = error;
-        if (coreURL) URL.revokeObjectURL(coreURL);
-        if (wasmURL) URL.revokeObjectURL(wasmURL);
-        coreURL = "";
-        wasmURL = "";
-      }
-    }
-    if (lastError || !coreURL || !wasmURL) {
-      throw new Error("Não foi possível baixar o conversor MP4 nos dois servidores gratuitos. " +
-        (lastError?.message || ""));
-    }
+    const coreAssets = await loadFfmpegCoreFromMirrors(onProgress);
+    coreURL = coreAssets.coreURL;
+    wasmURL = coreAssets.wasmURL;
 
     onProgress(77, "Inicializando FFmpeg WebAssembly");
     await withTimeout(
@@ -617,13 +786,7 @@ export async function convertWebmToMp4(webm, onProgress = () => {}, outputResolu
       90000,
       "O vídeo demorou demais para ser carregado no conversor MP4.",
     );
-    const is720p = outputResolution === "720p";
-    const safeDuration = Math.max(120, Math.min(360, Number(durationSeconds) || 300));
-    const targetTotalBitrate = Math.floor((maxUploadBytes * 8 * 0.84) / safeDuration);
-    const targetVideoBitrate = Math.max(450_000, targetTotalBitrate - 96_000);
-    const videoBitrate = Math.round(targetVideoBitrate / 1000) + "k";
-    const maxVideoBitrate = Math.round(targetVideoBitrate * 1.08 / 1000) + "k";
-    const videoBuffer = Math.round(targetVideoBitrate * 2 / 1000) + "k";
+    const targetVideoBitrate = outputResolution === "720p" ? "5M" : "8M";
     const code = await withTimeout(
       ffmpeg.exec([
         "-i", inputName,
@@ -631,11 +794,11 @@ export async function convertWebmToMp4(webm, onProgress = () => {}, outputResolu
         "-map", "0:a:0",
         "-c:v", "libx264",
         "-preset", "veryfast",
-        "-b:v", videoBitrate, "-maxrate", maxVideoBitrate, "-bufsize", videoBuffer,
+        "-b:v", targetVideoBitrate,
         "-pix_fmt", "yuv420p",
         "-r", String(FPS),
         "-c:a", "aac",
-        "-b:a", "96k",
+        "-b:a", "192k",
         "-movflags", "+faststart",
         "-shortest",
         "output.mp4",
@@ -650,14 +813,25 @@ export async function convertWebmToMp4(webm, onProgress = () => {}, outputResolu
       "O MP4 foi convertido, mas demorou demais para ser recuperado do conversor.",
     );
     const mp4 = new Blob([output], { type: "video/mp4" });
-    if (mp4.size < 64 * 1024) throw new Error("O MP4 final ficou pequeno demais e não passou na validação.");
-    if (mp4.size > 48 * 1024 * 1024) {
-      throw new Error("O MP4 ainda ficou com " + (mp4.size / 1024 / 1024).toFixed(1) +
-        " MiB após a compressão. O limite do Supabase Free é 50 MiB. Reduza a duração ou use armazenamento com limite maior.");
+    await validateMp4Blob(mp4, "MP4 convertido");
+    onProgress(97, "Verificando a reprodução completa do vídeo e do áudio");
+    const decodeCode = await withTimeout(
+      ffmpeg.exec([
+        "-v", "error",
+        "-xerror",
+        "-i", "output.mp4",
+        "-map", "0:v:0",
+        "-map", "0:a:0",
+        "-f", "null",
+        "-",
+      ]),
+      5 * 60 * 1000,
+      "A verificação completa do MP4 excedeu 5 minutos e foi interrompida.",
+    );
+    if (decodeCode !== 0) {
+      throw new Error("O MP4 passou pela verificação do cabeçalho, mas apresentou erro ao decodificar o vídeo ou o áudio. O arquivo não será disponibilizado como concluído.");
     }
-    const header = new Uint8Array(await mp4.slice(0, 16).arrayBuffer());
-    if (String.fromCharCode(...header.slice(4, 8)) !== "ftyp") throw new Error("O arquivo gerado não tem assinatura MP4 válida.");
-    onProgress(98, "MP4 validado");
+    onProgress(98, "MP4 finalizado e decodificado integralmente sem erros");
     return mp4;
   } catch (error) {
     const message = error?.message || String(error);
