@@ -140,18 +140,18 @@ async function loadBitmap(url) {
   }
 }
 
-function drawCover(context, bitmap, progress, alpha = 1) {
+function drawCover(context, bitmap, progress, alpha = 1, width = WIDTH, height = HEIGHT) {
   if (!bitmap || !bitmap.complete || !bitmap.naturalWidth || !bitmap.naturalHeight) {
     throw new Error("Uma imagem da montagem foi desconectada ou perdeu os dados antes da renderização.");
   }
   const imageWidth = bitmap.naturalWidth;
   const imageHeight = bitmap.naturalHeight;
-  const scale = Math.max(WIDTH / imageWidth, HEIGHT / imageHeight) * (1.02 + 0.07 * progress);
+  const scale = Math.max(width / imageWidth, height / imageHeight) * (1.02 + 0.07 * progress);
   const drawWidth = imageWidth * scale;
   const drawHeight = imageHeight * scale;
-  const drift = Math.sin(progress * Math.PI) * 12;
-  const x = (WIDTH - drawWidth) / 2 + drift;
-  const y = (HEIGHT - drawHeight) / 2;
+  const drift = Math.sin(progress * Math.PI) * 12 * (width / 720);
+  const x = (width - drawWidth) / 2 + drift;
+  const y = (height - drawHeight) / 2;
   context.globalAlpha = alpha;
   try {
     context.drawImage(bitmap, x, y, drawWidth, drawHeight);
@@ -160,7 +160,7 @@ function drawCover(context, bitmap, progress, alpha = 1) {
   }
 }
 
-function drawFrame(context, scenes, bitmaps, time, callouts = {}) {
+function drawFrame(context, scenes, bitmaps, time, callouts = {}, width = WIDTH, height = HEIGHT) {
   let index = scenes.findIndex((scene) => time >= Number(scene.start_seconds) && time < Number(scene.end_seconds));
   if (index < 0) index = time >= Number(scenes[scenes.length - 1]?.end_seconds) ? scenes.length - 1 : 0;
   const scene = scenes[index];
@@ -185,22 +185,22 @@ function drawFrame(context, scenes, bitmaps, time, callouts = {}) {
       : progress;
 
   context.fillStyle = "#080808";
-  context.fillRect(0, 0, WIDTH, HEIGHT);
+  context.fillRect(0, 0, width, height);
   if (outroActive && time < outroStart + 0.55) {
     const alpha = Math.min(1, (time - outroStart) / 0.55);
-    drawCover(context, bitmaps[index], progress);
-    drawCover(context, bitmaps[callouts.outroIndex], imageProgress, alpha);
+    drawCover(context, bitmaps[index], progress, 1, width, height);
+    drawCover(context, bitmaps[callouts.outroIndex], imageProgress, alpha, width, height);
   } else {
-    drawCover(context, activeBitmap, imageProgress);
+    drawCover(context, activeBitmap, imageProgress, 1, width, height);
     if (introActive && time >= start + introDuration - 0.55) {
       const alpha = Math.min(1, (time - (start + introDuration - 0.55)) / 0.55);
-      drawCover(context, bitmaps[0], 0, alpha);
+      drawCover(context, bitmaps[0], 0, alpha, width, height);
     } else if (!introActive && !outroActive) {
       const nextScene = scenes[index + 1];
       const transitionStart = Math.max(start, end - 0.55);
       if (nextScene && time >= transitionStart) {
         const nextProgress = Math.min(1, (time - transitionStart) / 0.55);
-        drawCover(context, bitmaps[index + 1], 0, nextProgress);
+        drawCover(context, bitmaps[index + 1], 0, nextProgress, 1, width, height);
       }
     }
   }
@@ -208,23 +208,24 @@ function drawFrame(context, scenes, bitmaps, time, callouts = {}) {
   const caption = (scene.captions || []).find((item) => time >= Number(item.start_seconds) && time < Number(item.end_seconds));
   if (caption?.text) {
     context.save();
-    context.font = "bold 43px Arial, sans-serif";
+    const scale = width / 720;
+    context.font = "bold " + Math.round(43 * scale) + "px Arial, sans-serif";
     context.textAlign = "center";
     context.textBaseline = "middle";
-    const lines = wrapText(context, caption.text, WIDTH - 104);
-    const lineHeight = 55;
-    const boxHeight = lines.length * lineHeight + 42;
-    const boxY = HEIGHT - 280 - boxHeight / 2;
+    const lines = wrapText(context, caption.text, width - 104 * scale);
+    const lineHeight = 55 * scale;
+    const boxHeight = lines.length * lineHeight + 42 * scale;
+    const boxY = height - 280 * scale - boxHeight / 2;
     context.fillStyle = "rgba(0,0,0,0.68)";
-    drawRoundedRect(context, 38, boxY, WIDTH - 76, boxHeight, 20);
+    drawRoundedRect(context, 38 * scale, boxY, width - 76 * scale, boxHeight, 20 * scale);
     context.fill();
     context.fillStyle = "#ffffff";
     lines.forEach((line, lineIndex) => {
       context.strokeStyle = "rgba(0,0,0,0.9)";
-      context.lineWidth = 3;
-      const y = boxY + 22 + lineHeight * lineIndex + lineHeight / 2;
-      context.strokeText(line, WIDTH / 2, y, WIDTH - 110);
-      context.fillText(line, WIDTH / 2, y, WIDTH - 110);
+      context.lineWidth = 3 * scale;
+      const y = boxY + 22 * scale + lineHeight * lineIndex + lineHeight / 2;
+      context.strokeText(line, width / 2, y, width - 110 * scale);
+      context.fillText(line, width / 2, y, width - 110 * scale);
     });
     context.restore();
   }
@@ -306,12 +307,15 @@ export async function recordNarratedSlideshow(video, onProgress = () => {}) {
       throw new Error("A narração tem " + Math.round(audioBuffer.duration) + " segundos. O limite é de 2 a 5 minutos.");
     }
 
+    const outputResolution = video.output_resolution === "720p"
+      ? { width: 720, height: 1280, videoBitrate: 3_000_000 }
+      : { width: 1080, height: 1920, videoBitrate: 6_000_000 };
     const canvas = document.createElement("canvas");
-    canvas.width = WIDTH;
-    canvas.height = HEIGHT;
+    canvas.width = outputResolution.width;
+    canvas.height = outputResolution.height;
     const context = canvas.getContext("2d", { alpha: false });
     if (!context) throw new Error("Não foi possível preparar a tela de composição.");
-    drawFrame(context, scenes, images, 0, callouts);
+    drawFrame(context, scenes, images, 0, callouts, outputResolution.width, outputResolution.height);
 
     if (typeof canvas.captureStream !== "function") {
       throw new Error("Este navegador não permite capturar a composição do vídeo.");
@@ -336,7 +340,7 @@ export async function recordNarratedSlideshow(video, onProgress = () => {}) {
         : "video/webm";
     recorder = new MediaRecorder(stream, {
       mimeType,
-      videoBitsPerSecond: 2_200_000,
+      videoBitsPerSecond: outputResolution.videoBitrate,
       audioBitsPerSecond: 96_000,
     });
     const chunks = [];
@@ -383,7 +387,7 @@ export async function recordNarratedSlideshow(video, onProgress = () => {}) {
             throw new Error("O relógio de áudio parou de avançar. Mantenha a aba da Fábrica de Fatos em primeiro plano e tente novamente.");
           }
           const elapsed = Math.max(0, now - startAt);
-          drawFrame(context, scenes, images, Math.min(audioBuffer.duration, elapsed), callouts);
+          drawFrame(context, scenes, images, Math.min(audioBuffer.duration, elapsed), callouts, outputResolution.width, outputResolution.height);
           onProgress(
             8 + Math.round((elapsed / audioBuffer.duration) * 67),
             "Sincronizando cenas e legendas · " + Math.min(100, Math.round((elapsed / audioBuffer.duration) * 100)) + "%",
@@ -449,7 +453,7 @@ async function withTimeout(promise, timeoutMs, message) {
   }
 }
 
-export async function convertWebmToMp4(webm, onProgress = () => {}) {
+export async function convertWebmToMp4(webm, onProgress = () => {}, outputResolution = "1080p") {
   if (!(webm instanceof Blob) || webm.size < 64 * 1024) {
     throw new Error("A gravação WebM não contém dados suficientes para converter.");
   }
@@ -505,6 +509,10 @@ export async function convertWebmToMp4(webm, onProgress = () => {}) {
       90000,
       "O vídeo demorou demais para ser carregado no conversor MP4.",
     );
+    const is720p = outputResolution === "720p";
+    const videoBitrate = is720p ? "2200k" : "4800k";
+    const maxVideoBitrate = is720p ? "2600k" : "5500k";
+    const videoBuffer = is720p ? "5200k" : "11000k";
     const code = await withTimeout(
       ffmpeg.exec([
         "-i", "input.webm",
@@ -512,7 +520,7 @@ export async function convertWebmToMp4(webm, onProgress = () => {}) {
         "-map", "0:a:0",
         "-c:v", "libx264",
         "-preset", "ultrafast",
-        "-b:v", "900k", "-maxrate", "1000k", "-bufsize", "2000k",
+        "-b:v", videoBitrate, "-maxrate", maxVideoBitrate, "-bufsize", videoBuffer,
         "-pix_fmt", "yuv420p",
         "-r", String(FPS),
         "-c:a", "aac",
