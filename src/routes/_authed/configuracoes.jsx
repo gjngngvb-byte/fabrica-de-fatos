@@ -186,6 +186,19 @@ function Settings() {
           <input className={inputClass} value={form.avoid} onChange={(e) => set("avoid", e.target.value)} />
         </Field>
 
+        <Field label="Temas já utilizados" hint="Todo tema de um vídeo finalizado aparece aqui e é enviado à IA para evitar repetições.">
+          <div className="max-h-56 space-y-2 overflow-y-auto rounded-lg border border-border bg-secondary/40 p-3">
+            {studio.used_topics?.length ? studio.used_topics.map((topic) => (
+              <div key={topic.id} className="border-b border-border/60 pb-2 last:border-0 last:pb-0">
+                <p className="text-sm text-foreground">{topic.title}</p>
+                <p className="mt-0.5 text-[10px] text-muted-foreground">
+                  {topic.created_at ? new Date(topic.created_at).toLocaleDateString("pt-BR") : ""}
+                </p>
+              </div>
+            )) : <p className="text-xs text-muted-foreground">Os temas aparecerão aqui quando os vídeos forem finalizados.</p>}
+          </div>
+        </Field>
+
         <button
           type="submit"
           disabled={saving}
