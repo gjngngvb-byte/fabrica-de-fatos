@@ -63,6 +63,8 @@ function Settings() {
     duration_target: Math.min(300, Math.max(120, studio.duration_target || 180)),
     visual_style: studio.visual_style || "",
     cta: studio.cta || "",
+    intro_callout_enabled: studio.intro_callout_enabled !== false,
+    outro_callout_enabled: studio.outro_callout_enabled !== false,
     avoid: studio.avoid || "",
     hashtagsText: (studio.base_hashtags || []).join(", "),
   });
@@ -88,6 +90,8 @@ function Settings() {
             .filter(Boolean)
             .slice(0, 10),
           cta: form.cta,
+          intro_callout_enabled: Boolean(form.intro_callout_enabled),
+          outro_callout_enabled: Boolean(form.outro_callout_enabled),
           avoid: form.avoid,
         },
       });
@@ -173,6 +177,19 @@ function Settings() {
         <Field label="Chamada final" hint="Entra no fim da legenda de cada vídeo.">
           <input className={inputClass} value={form.cta} onChange={(e) => set("cta", e.target.value)} />
         </Field>
+
+        <div className="rounded-xl border border-border bg-card/40 p-4">
+          <p className="text-sm font-medium text-foreground">Chamadas visuais</p>
+          <p className="mt-1 text-xs text-muted-foreground">Cada chamada ativada ganha uma imagem exclusiva além das 15 imagens principais.</p>
+          <label className="mt-4 flex items-start gap-3">
+            <input type="checkbox" className="mt-0.5 size-4 accent-primary" checked={form.intro_callout_enabled} onChange={(e) => set("intro_callout_enabled", e.target.checked)} />
+            <span><span className="block text-sm text-foreground">Chamada inicial</span><span className="block text-xs text-muted-foreground">Usa o gancho de abertura e adiciona uma imagem antes da sequência principal.</span></span>
+          </label>
+          <label className="mt-3 flex items-start gap-3">
+            <input type="checkbox" className="mt-0.5 size-4 accent-primary" checked={form.outro_callout_enabled} onChange={(e) => set("outro_callout_enabled", e.target.checked)} />
+            <span><span className="block text-sm text-foreground">Chamada final</span><span className="block text-xs text-muted-foreground">Usa o encerramento e a chamada final configurada, com uma imagem exclusiva.</span></span>
+          </label>
+        </div>
 
         <Field label="Hashtags fixas" hint="Separadas por vírgula, sem o símbolo #.">
           <input
