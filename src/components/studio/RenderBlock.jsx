@@ -46,12 +46,23 @@ export default function RenderBlock({ video }) {
       currentPhase = "preparação do roteiro";
       let currentVideo = activeVideo || video;
       const wordCount = String(currentVideo.script || "").trim().split(/\s+/).filter(Boolean).length;
-      if (wordCount < 280 || !Array.isArray(currentVideo.scenes) || currentVideo.scenes.length !== TOTAL_SCENES) {
-        setRender({ status: "renderizando", url: "", error: "", progress: 2, detail: "FASE 1/6 · A IA está criando um tema original e um roteiro de 2 a 5 minutos." });
+      const normalizeNarration = (value) => String(value || "").normalize("NFC").replace(/\s+/g, " ").trim();
+      const sceneNarration = Array.isArray(currentVideo.scenes)
+        ? currentVideo.scenes.map((scene) => normalizeNarration(scene?.narration)).filter(Boolean).join(" ")
+        : "";
+      const scenesMatchScript = Boolean(currentVideo.script) &&
+        normalizeNarration(sceneNarration) === normalizeNarration(currentVideo.script);
+      if (wordCount < 280 || !Array.isArray(currentVideo.scenes) ||
+          currentVideo.scenes.length !== TOTAL_SCENES || !scenesMatchScript) {
+        setRender({ status: "renderizando", url: "", error: "", progress: 2, detail: "FASE 1/6 · Conferindo a correspondência entre roteiro e cenas e preparando o roteiro correto." });
         const scriptResult = await createScript({ data: { videoId: video.id, sceneCount: 0 } });
         currentVideo = scriptResult?.video || scriptResult;
         if (!currentVideo?.script || !Array.isArray(currentVideo.scenes) || currentVideo.scenes.length !== TOTAL_SCENES) {
           throw new Error("A IA não retornou um roteiro completo dividido em exatamente 15 partes.");
+        }
+        const returnedSceneNarration = currentVideo.scenes.map((scene) => normalizeNarration(scene?.narration)).filter(Boolean).join(" ");
+        if (normalizeNarration(returnedSceneNarration) !== normalizeNarration(currentVideo.script)) {
+          throw new Error("As cenas retornadas não correspondem ao roteiro principal. A produção foi interrompida para evitar um vídeo com assuntos misturados.");
         }
         setActiveVideo(currentVideo);
       }
