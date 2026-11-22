@@ -84,14 +84,14 @@ export default function RenderBlock({ video }) {
           setPreviewScenes([...scenes]);
           setRender({
             status: "renderizando", url: "", error: "",
-            progress: 5 + Math.round(((i + 1) / total) * 38),
+            progress: 5 + Math.round(((i + 1) / total) * 34),
             detail: "FASE 2/6 · Imagem " + String(i + 1).padStart(2, "0") + "/15 já pronta · " + pct(i + 1, total) + "%.",
           });
           continue;
         }
         setRender({
           status: "renderizando", url: "", error: "",
-          progress: 5 + Math.round((i / total) * 38),
+          progress: 5 + Math.round((i / total) * 34),
           detail: "FASE 2/6 · Gerando imagem " + String(i + 1).padStart(2, "0") + "/15 · " + pct(i, total) + "% concluído.",
         });
         const result = await createImage({ data: { videoId: video.id, sceneIndex: i } });
@@ -115,7 +115,7 @@ export default function RenderBlock({ video }) {
         if (task.exists()) continue;
         setRender({
           status: "renderizando", url: "", error: "",
-          progress: 40 + Math.round((i / Math.max(1, calloutTasks.length)) * 3),
+          progress: 39 + Math.round((i / Math.max(1, calloutTasks.length)) * 4),
           detail: "FASE 2/6 · Criando imagem extra da " + task.label + ".",
         });
         const result = await createImage({ data: { videoId: video.id, sceneIndex: task.sceneIndex } });
