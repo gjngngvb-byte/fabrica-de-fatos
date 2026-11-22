@@ -12,8 +12,8 @@ export default function PhonePlayer({
   const [progress, setProgress] = useState(0);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
-  const introDuration = introImageUrl ? 3 : 0;
-  const outroDuration = outroImageUrl ? 3 : 0;
+  const introDuration = introImageUrl ? Math.max(0.8, Number(scenes[0]?.intro_audio_duration) || 0.8) : 0;
+  const outroDuration = outroImageUrl ? Math.max(0.8, Number(scenes[scenes.length - 1]?.outro_audio_duration) || 0.8) : 0;
   const introActive = Boolean(introImageUrl) && currentTime < introDuration;
   const outroActive = Boolean(outroImageUrl) && duration > 0 && currentTime >= duration - outroDuration;
   const timedScene = duration > 0
