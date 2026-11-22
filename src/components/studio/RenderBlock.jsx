@@ -35,6 +35,7 @@ export default function RenderBlock({ video }) {
   const [busy, setBusy] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [previewScenes, setPreviewScenes] = useState(video.scenes || []);
+  const [calloutSettings, setCalloutSettings] = useState({ intro: true, outro: true });
   const [activeVideo, setActiveVideo] = useState(video);
   const started = useRef(false);
 
@@ -49,6 +50,7 @@ export default function RenderBlock({ video }) {
       const studioConfig = await loadStudio();
       const introCalloutEnabled = studioConfig?.intro_callout_enabled !== false;
       const outroCalloutEnabled = studioConfig?.outro_callout_enabled !== false;
+      setCalloutSettings({ intro: introCalloutEnabled, outro: outroCalloutEnabled });
       const wordCount = String(currentVideo.script || "").trim().split(/\s+/).filter(Boolean).length;
       const normalizeNarration = (value) => String(value || "").normalize("NFC").replace(/\s+/g, " ").trim();
       const sceneNarration = Array.isArray(currentVideo.scenes)
@@ -195,7 +197,7 @@ export default function RenderBlock({ video }) {
 
       currentPhase = "renderização do vídeo no navegador";
       setRender({ status: "renderizando", url: "", error: "", progress: 74, detail: "FASE 6/6 · Montando o vídeo vertical com imagens, narração e legendas." });
-      const webm = await recordNarratedSlideshow(currentVideo, (progress, detail) => {
+      const webm = await recordNarratedSlideshow({ ...currentVideo, intro_callout_enabled: introCalloutEnabled, outro_callout_enabled: outroCalloutEnabled }, (progress, detail) => {
         const overall = 74 + Math.round((progress / 75) * 16);
         setRender({ status: "renderizando", url: "", error: "", progress: overall, detail: "FASE 6/6 · " + detail });
       });
@@ -329,13 +331,13 @@ export default function RenderBlock({ video }) {
           })}
         </div>
         <div className="mt-3 grid grid-cols-2 gap-2">
-          {previewScenes[0]?.intro_callout_image_url && (
+          {calloutSettings.intro && previewScenes[0]?.intro_callout_image_url && (
             <div className="overflow-hidden rounded-lg border border-border">
               <img src={previewScenes[0].intro_callout_image_url} alt="Chamada inicial" className="aspect-[3/4] w-full object-cover" />
               <p className="p-2 text-[10px] text-muted-foreground">Imagem extra · Chamada inicial</p>
             </div>
           )}
-          {previewScenes[14]?.outro_callout_image_url && (
+          {calloutSettings.outro && previewScenes[14]?.outro_callout_image_url && (
             <div className="overflow-hidden rounded-lg border border-border">
               <img src={previewScenes[14].outro_callout_image_url} alt="Chamada final" className="aspect-[3/4] w-full object-cover" />
               <p className="p-2 text-[10px] text-muted-foreground">Imagem extra · Chamada final</p>
