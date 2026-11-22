@@ -46,6 +46,7 @@ export default function RenderBlock({ video }) {
   const [downloading, setDownloading] = useState(false);
   const [previewScenes, setPreviewScenes] = useState(video.scenes || []);
   const [calloutSettings, setCalloutSettings] = useState({ intro: true, outro: true });
+  const [outputResolution, setOutputResolution] = useState("1080p");
   const [activeVideo, setActiveVideo] = useState(video);
   const started = useRef(false);
 
@@ -60,6 +61,7 @@ export default function RenderBlock({ video }) {
       let currentVideo = activeVideo || video;
       const studioConfig = await loadStudio();
       const outputResolution = studioConfig?.output_resolution === "720p" ? "720p" : "1080p";
+      setOutputResolution(outputResolution);
       const introCalloutEnabled = studioConfig?.intro_callout_enabled !== false;
       const outroCalloutEnabled = studioConfig?.outro_callout_enabled !== false;
       setCalloutSettings({ intro: introCalloutEnabled, outro: outroCalloutEnabled });
@@ -303,6 +305,16 @@ export default function RenderBlock({ video }) {
         <div className="mt-3 flex items-center gap-2 text-xs text-emerald-500">
           <CheckCircle2 className="size-4" /> MP4 validado · 15 imagens, narração e legendas sincronizadas
         </div>
+        <div className="mt-4 rounded-xl border border-border bg-card/60 p-3">
+          <div className="mb-2 flex items-center justify-between text-[11px]">
+            <span className="font-medium text-foreground">Produção concluída</span>
+            <span className="font-mono text-emerald-500">100%</span>
+          </div>
+          <div className="h-2 overflow-hidden rounded-full bg-secondary">
+            <div className="h-full w-full rounded-full bg-emerald-500" />
+          </div>
+          <p className="mt-2 text-[10px] text-muted-foreground">MP4 salvo · {outputResolution === "720p" ? "720 × 1280 HD" : "1080 × 1920 Full HD"}</p>
+        </div>
         <button onClick={downloadMp4} disabled={downloading}
           className="mt-4 flex h-11 w-full items-center justify-center gap-2 rounded-full bg-primary text-xs font-semibold text-primary-foreground disabled:opacity-50">
           {downloading ? <Loader2 className="size-4 animate-spin" /> : <Download className="size-4" />}
@@ -388,7 +400,7 @@ export default function RenderBlock({ video }) {
         )}
         {!busy && render.status !== "falhou" && (
           <p className="text-center font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
-            MP4 vertical 9:16 · {activeVideo?.output_resolution === "720p" ? "720 × 1280" : "1080 × 1920"} · duração entre 2 e 5 minutos
+            MP4 vertical 9:16 · {outputResolution === "720p" ? "720 × 1280" : "1080 × 1920"} · duração entre 2 e 5 minutos
           </p>
         )}
       </div>
