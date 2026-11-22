@@ -543,7 +543,7 @@ async function withTimeout(promise, timeoutMs, message) {
   }
 }
 
-export async function convertWebmToMp4(webm, onProgress = () => {}, outputResolution = "1080p", durationSeconds = 300) {
+export async function convertWebmToMp4(webm, onProgress = () => {}, outputResolution = "1080p") {
   if (!(webm instanceof Blob) || webm.size < 64 * 1024) {
     throw new Error("A gravação de vídeo não contém dados suficientes para converter.");
   }
