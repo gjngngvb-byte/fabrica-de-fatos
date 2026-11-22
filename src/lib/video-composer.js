@@ -299,11 +299,13 @@ export async function recordNarratedSlideshow(video, onProgress = () => {}) {
   let recorder = null;
   let source = null;
   let animationId = 0;
+  let watchdogId = 0;
   let recordingStarted = false;
   let recordedPromise = null;
 
   const cleanup = async () => {
     if (animationId) cancelAnimationFrame(animationId);
+    if (watchdogId) clearInterval(watchdogId);
     try { if (source) source.stop(); } catch {}
     if (recorder && recorder.state !== "inactive") {
       try { recorder.stop(); } catch {}
@@ -437,21 +439,31 @@ export async function recordNarratedSlideshow(video, onProgress = () => {}) {
     recorder.start(1000);
     recordingStarted = true;
     source.start(startAt);
+    onProgress(8, "Gravando vídeo em tempo real e sincronizando a narração. Mantenha esta aba aberta e visível.");
 
     await new Promise((resolve, reject) => {
       let settled = false;
       let lastAudioTime = audioContext.currentTime;
       let lastAdvanceAt = Date.now();
+      let lastFrameAt = Date.now();
       const finish = (error) => {
         if (settled) return;
         settled = true;
+        if (watchdogId) clearInterval(watchdogId);
+        watchdogId = 0;
         if (animationId) cancelAnimationFrame(animationId);
         animationId = 0;
         if (error) reject(error);
         else resolve();
       };
+      watchdogId = setInterval(() => {
+        if (!settled && Date.now() - lastFrameAt > 15000) {
+          finish(new Error("A gravação não recebeu novos quadros por 15 segundos. O navegador pode ter pausado a aba. Mantenha a Fábrica de Fatos aberta e visível durante a montagem e tente novamente."));
+        }
+      }, 3000);
       const frame = () => {
         if (settled) return;
+        lastFrameAt = Date.now();
         try {
           if (audioContext.state !== "running") {
             throw new Error("O áudio foi pausado pelo navegador durante a montagem.");
