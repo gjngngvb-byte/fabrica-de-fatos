@@ -710,12 +710,10 @@ export async function convertWebmToMp4(webm, onProgress = () => {}, outputResolu
     throw new Error("A gravação de vídeo não contém dados suficientes para converter.");
   }
   const isMp4Input = webm.type.includes("mp4");
-  if (isMp4Input) {
-    await validateMp4Blob(webm, "MP4 original do navegador");
-    onProgress(98, "MP4 original validado, sem recompressão");
-    return webm;
-  }
-  onProgress(76, "Convertendo WebM para MP4 em alta qualidade (FFmpeg no navegador)");
+  // Always pass browser recordings through FFmpeg. Native MediaRecorder MP4
+  // output can have incomplete indexes/finalization on some browser versions.
+  // Re-encoding produces a finalized MP4 with fast-start metadata.
+  onProgress(76, "Finalizando e validando o vídeo em MP4 de alta qualidade (FFmpeg no navegador)");
   const { FFmpeg } = await withTimeout(
     import("@ffmpeg/ffmpeg"),
     30000,
@@ -774,7 +772,24 @@ export async function convertWebmToMp4(webm, onProgress = () => {}, outputResolu
     );
     const mp4 = new Blob([output], { type: "video/mp4" });
     await validateMp4Blob(mp4, "MP4 convertido");
-    onProgress(98, "MP4 convertido e estruturas internas validadas");
+    onProgress(97, "Verificando a reprodução completa do vídeo e do áudio");
+    const decodeCode = await withTimeout(
+      ffmpeg.exec([
+        "-v", "error",
+        "-xerror",
+        "-i", "output.mp4",
+        "-map", "0:v:0",
+        "-map", "0:a:0",
+        "-f", "null",
+        "-",
+      ]),
+      5 * 60 * 1000,
+      "A verificação completa do MP4 excedeu 5 minutos e foi interrompida.",
+    );
+    if (decodeCode !== 0) {
+      throw new Error("O MP4 passou pela verificação do cabeçalho, mas apresentou erro ao decodificar o vídeo ou o áudio. O arquivo não será disponibilizado como concluído.");
+    }
+    onProgress(98, "MP4 finalizado e decodificado integralmente sem erros");
     return mp4;
   } catch (error) {
     const message = error?.message || String(error);
