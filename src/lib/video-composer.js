@@ -514,23 +514,113 @@ export async function recordNarratedSlideshow(video, onProgress = () => {}) {
   }
 }
 
-async function fetchCoreAsset(url, mimeType, timeoutMs = 45000) {
+async function fetchCoreAsset(url, mimeType, timeoutMs = 45000, parentSignal) {
   const controller = new AbortController();
+  const abortFromParent = () => controller.abort();
+  if (parentSignal?.aborted) controller.abort();
+  else parentSignal?.addEventListener("abort", abortFromParent, { once: true });
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const response = await fetch(url, { signal: controller.signal, cache: "force-cache" });
-    if (!response.ok) throw new Error("HTTP " + response.status + " ao baixar " + url);
+    if (!response.ok) throw new Error("HTTP " + response.status + " ao baixar o conversor.");
     const blob = await response.blob();
-    if (!blob.size) throw new Error("O arquivo do conversor veio vazio: " + url);
+    if (!blob.size) throw new Error("O arquivo do conversor veio vazio.");
     return URL.createObjectURL(new Blob([blob], { type: mimeType }));
   } catch (error) {
     if (error?.name === "AbortError") {
-      throw new Error("Tempo limite ao baixar o conversor MP4. O servidor externo não respondeu.");
+      throw new Error("Tempo limite ao baixar um componente do conversor MP4.");
     }
     throw error;
   } finally {
     clearTimeout(timeout);
+    parentSignal?.removeEventListener("abort", abortFromParent);
   }
+}
+
+async function loadFfmpegCoreFromMirrors(onProgress) {
+  const cdnBases = [
+    "https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.10/dist/esm",
+    "https://fastly.jsdelivr.net/npm/@ffmpeg/core@0.12.10/dist/esm",
+    "https://gcore.jsdelivr.net/npm/@ffmpeg/core@0.12.10/dist/esm",
+    "https://testingcf.jsdelivr.net/npm/@ffmpeg/core@0.12.10/dist/esm",
+    "https://unpkg.com/@ffmpeg/core@0.12.10/dist/esm",
+  ];
+  const controllers = [];
+  const attempts = cdnBases.map(async (base, index) => {
+    const controller = new AbortController();
+    controllers.push(controller);
+    const [coreResult, wasmResult] = await Promise.allSettled([
+      fetchCoreAsset(base + "/ffmpeg-core.js", "text/javascript", 35000, controller.signal),
+      fetchCoreAsset(base + "/ffmpeg-core.wasm", "application/wasm", 55000, controller.signal),
+    ]);
+    if (coreResult.status === "rejected" || wasmResult.status === "rejected") {
+      controller.abort();
+      if (coreResult.status === "fulfilled") URL.revokeObjectURL(coreResult.value);
+      if (wasmResult.status === "fulfilled") URL.revokeObjectURL(wasmResult.value);
+      const reason = coreResult.status === "rejected" ? coreResult.reason : wasmResult.reason;
+      throw new Error("Servidor " + (index + 1) + ": " + (reason?.message || String(reason)));
+    }
+    return { base, coreURL: coreResult.value, wasmURL: wasmResult.value };
+  });
+
+  try {
+    onProgress(76, "Testando 5 servidores de conversão em paralelo. O primeiro disponível será utilizado.");
+    const winner = await Promise.any(attempts);
+    controllers.forEach((controller) => controller.abort());
+    const settled = await Promise.allSettled(attempts);
+    for (const result of settled) {
+      if (result.status === "fulfilled" && result.value.base !== winner.base) {
+        URL.revokeObjectURL(result.value.coreURL);
+        URL.revokeObjectURL(result.value.wasmURL);
+      }
+    }
+    onProgress(77, "Conversor MP4 carregado com sucesso.");
+    return winner;
+  } catch (error) {
+    controllers.forEach((controller) => controller.abort());
+    const settled = await Promise.allSettled(attempts);
+    for (const result of settled) {
+      if (result.status === "fulfilled") {
+        URL.revokeObjectURL(result.value.coreURL);
+        URL.revokeObjectURL(result.value.wasmURL);
+      }
+    }
+    const details = settled
+      .filter((result) => result.status === "rejected")
+      .map((result) => result.reason?.message || String(result.reason))
+      .join(" | ");
+    throw new Error("Nenhum dos 5 servidores conseguiu fornecer o conversor MP4. " + details.slice(0, 700));
+  }
+}
+
+async function validateMp4Blob(blob, label = "MP4") {
+  if (!(blob instanceof Blob) || blob.size < 64 * 1024) {
+    throw new Error(label + " ficou vazio ou pequeno demais.");
+  }
+  const headSize = Math.min(blob.size, 2 * 1024 * 1024);
+  const tailStart = Math.max(0, blob.size - 2 * 1024 * 1024);
+  const [head, tail] = await Promise.all([
+    blob.slice(0, headSize).arrayBuffer(),
+    blob.slice(tailStart).arrayBuffer(),
+  ]);
+  const first = new Uint8Array(head);
+  if (first.length < 12 || String.fromCharCode(...first.slice(4, 8)) !== "ftyp") {
+    throw new Error(label + " não possui um cabeçalho MP4 válido.");
+  }
+  const bytes = new Uint8Array(first.length + tail.byteLength);
+  bytes.set(first, 0);
+  bytes.set(new Uint8Array(tail), first.length);
+  const hasBox = (tag) => {
+    const a = tag.charCodeAt(0), b = tag.charCodeAt(1), c = tag.charCodeAt(2), d = tag.charCodeAt(3);
+    for (let i = 4; i <= bytes.length - 4; i++) {
+      if (bytes[i] === a && bytes[i + 1] === b && bytes[i + 2] === c && bytes[i + 3] === d) return true;
+    }
+    return false;
+  };
+  if (!hasBox("moov") || !hasBox("mdat")) {
+    throw new Error(label + " parece incompleto: faltam estruturas internas obrigatórias do MP4.");
+  }
+  return true;
 }
 
 async function withTimeout(promise, timeoutMs, message) {
@@ -553,8 +643,7 @@ export async function convertWebmToMp4(webm, onProgress = () => {}, outputResolu
   }
   const isMp4Input = webm.type.includes("mp4");
   if (isMp4Input) {
-    const header = new Uint8Array(await webm.slice(0, 16).arrayBuffer());
-    if (String.fromCharCode(...header.slice(4, 8)) !== "ftyp") throw new Error("O navegador declarou MP4, mas o arquivo não passou na validação de assinatura.");
+    await validateMp4Blob(webm, "MP4 original do navegador");
     onProgress(98, "MP4 original validado, sem recompressão");
     return webm;
   }
@@ -568,32 +657,9 @@ export async function convertWebmToMp4(webm, onProgress = () => {}, outputResolu
   let coreURL = "";
   let wasmURL = "";
   try {
-    const cdnBases = [
-      "https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.10/dist/esm",
-      "https://fastly.jsdelivr.net/npm/@ffmpeg/core@0.12.10/dist/esm",
-      "https://unpkg.com/@ffmpeg/core@0.12.10/dist/esm",
-    ];
-    let lastError = null;
-    for (const base of cdnBases) {
-      try {
-        onProgress(76, "Baixando conversor MP4 (servidor " + (cdnBases.indexOf(base) + 1) + "/3)");
-        coreURL = await fetchCoreAsset(base + "/ffmpeg-core.js", "text/javascript");
-        onProgress(76, "Baixando componentes MP4 (servidor " + (cdnBases.indexOf(base) + 1) + "/3)");
-        wasmURL = await fetchCoreAsset(base + "/ffmpeg-core.wasm", "application/wasm", 90000);
-        lastError = null;
-        break;
-      } catch (error) {
-        lastError = error;
-        if (coreURL) URL.revokeObjectURL(coreURL);
-        if (wasmURL) URL.revokeObjectURL(wasmURL);
-        coreURL = "";
-        wasmURL = "";
-      }
-    }
-    if (lastError || !coreURL || !wasmURL) {
-      throw new Error("Não foi possível baixar o conversor MP4 nos dois servidores gratuitos. " +
-        (lastError?.message || ""));
-    }
+    const coreAssets = await loadFfmpegCoreFromMirrors(onProgress);
+    coreURL = coreAssets.coreURL;
+    wasmURL = coreAssets.wasmURL;
 
     onProgress(77, "Inicializando FFmpeg WebAssembly");
     await withTimeout(
@@ -639,10 +705,8 @@ export async function convertWebmToMp4(webm, onProgress = () => {}, outputResolu
       "O MP4 foi convertido, mas demorou demais para ser recuperado do conversor.",
     );
     const mp4 = new Blob([output], { type: "video/mp4" });
-    if (mp4.size < 64 * 1024) throw new Error("O MP4 final ficou pequeno demais e não passou na validação.");
-    const header = new Uint8Array(await mp4.slice(0, 16).arrayBuffer());
-    if (String.fromCharCode(...header.slice(4, 8)) !== "ftyp") throw new Error("O arquivo gerado não tem assinatura MP4 válida.");
-    onProgress(98, "MP4 validado");
+    await validateMp4Blob(mp4, "MP4 convertido");
+    onProgress(98, "MP4 convertido e estruturas internas validadas");
     return mp4;
   } catch (error) {
     const message = error?.message || String(error);
