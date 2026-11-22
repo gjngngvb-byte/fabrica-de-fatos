@@ -11,13 +11,12 @@ export default function PhonePlayer({ scenes = [], audioUrl, title, introImageUr
   const [duration, setDuration] = useState(0);
   const introDuration = introImageUrl ? 3 : 0;
   const outroDuration = outroImageUrl ? 3 : 0;
-  const mainDuration = Math.max(0.1, duration - introDuration - outroDuration);
   const introActive = Boolean(introImageUrl) && currentTime < introDuration;
   const outroActive = Boolean(outroImageUrl) && duration > 0 && currentTime >= duration - outroDuration;
-  const sceneProgress = duration > 0
-    ? Math.max(0, Math.min(0.9999, (currentTime - introDuration) / mainDuration))
-    : progress;
-  const active = Math.min(Math.max(0, scenes.length - 1), Math.floor(sceneProgress * scenes.length));
+  const timedScene = duration > 0
+    ? scenes.findIndex((scene) => currentTime >= Number(scene.start_seconds || 0) && currentTime < Number(scene.end_seconds || 0))
+    : -1;
+  const active = Math.min(Math.max(0, scenes.length - 1), timedScene >= 0 ? timedScene : Math.floor(progress * scenes.length));
   const visualItems = [
     ...(introImageUrl ? [{ type: "intro", image_url: introImageUrl }] : []),
     ...scenes.map((scene) => ({ type: "scene", ...scene })),
