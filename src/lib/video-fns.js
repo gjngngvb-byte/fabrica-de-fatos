@@ -35,7 +35,7 @@ const DEFAULT_STUDIO = {
   videos_per_day: 5,
   duration_target: 300,
   output_resolution: "1080p",
-  visual_style: "fotografia documental cinematográfica, luz natural dramática, cores ricas, textura de filme 35mm",
+  visual_style: "",
   base_hashtags: ["fatoscuriosos", "vocesabia", "curiosidades"],
   cta: "Segue para mais um fato por dia.",
   intro_callout: "",
