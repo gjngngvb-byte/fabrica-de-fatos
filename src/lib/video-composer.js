@@ -186,21 +186,22 @@ function drawFrame(context, scenes, bitmaps, time, callouts = {}) {
 
   context.fillStyle = "#080808";
   context.fillRect(0, 0, WIDTH, HEIGHT);
-  drawCover(context, activeBitmap, imageProgress);
-
-  if (introActive && time >= start + introDuration - 0.55) {
-    const alpha = Math.min(1, (time - (start + introDuration - 0.55)) / 0.55);
-    drawCover(context, bitmaps[0], 0, alpha);
-  } else if (outroActive && time < outroStart + 0.55) {
+  if (outroActive && time < outroStart + 0.55) {
     const alpha = Math.min(1, (time - outroStart) / 0.55);
-    drawCover(context, bitmaps[index], progress, 1 - alpha);
+    drawCover(context, bitmaps[index], progress);
     drawCover(context, bitmaps[callouts.outroIndex], imageProgress, alpha);
-  } else if (!introActive && !outroActive) {
-    const nextScene = scenes[index + 1];
-    const transitionStart = Math.max(start, end - 0.55);
-    if (nextScene && time >= transitionStart) {
-      const nextProgress = Math.min(1, (time - transitionStart) / 0.55);
-      drawCover(context, bitmaps[index + 1], 0, nextProgress);
+  } else {
+    drawCover(context, activeBitmap, imageProgress);
+    if (introActive && time >= start + introDuration - 0.55) {
+      const alpha = Math.min(1, (time - (start + introDuration - 0.55)) / 0.55);
+      drawCover(context, bitmaps[0], 0, alpha);
+    } else if (!introActive && !outroActive) {
+      const nextScene = scenes[index + 1];
+      const transitionStart = Math.max(start, end - 0.55);
+      if (nextScene && time >= transitionStart) {
+        const nextProgress = Math.min(1, (time - transitionStart) / 0.55);
+        drawCover(context, bitmaps[index + 1], 0, nextProgress);
+      }
     }
   }
 
