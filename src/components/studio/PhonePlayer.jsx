@@ -23,6 +23,16 @@ export default function PhonePlayer({ scenes = [], audioUrl, title, introImageUr
     ...(outroImageUrl ? [{ type: "outro", image_url: outroImageUrl }] : []),
   ];
   const activeVisual = introActive ? 0 : outroActive ? visualItems.length - 1 : active + (introImageUrl ? 1 : 0);
+  const activeScene = scenes[active];
+  const sceneVisualStart = Math.max(Number(activeScene?.start_seconds || 0), active === 0 && introImageUrl ? introDuration : 0);
+  const sceneVisualEnd = Math.min(Number(activeScene?.end_seconds || duration), active === scenes.length - 1 && outroImageUrl ? duration - outroDuration : duration);
+  const activeVisualProgress = introActive
+    ? currentTime / Math.max(0.1, introDuration)
+    : outroActive
+      ? (currentTime - (duration - outroDuration)) / Math.max(0.1, outroDuration)
+      : duration > 0
+        ? (currentTime - sceneVisualStart) / Math.max(0.1, sceneVisualEnd - sceneVisualStart)
+        : progress * visualItems.length - activeVisual;
 
   useEffect(() => {
     setProgress(0);
@@ -93,7 +103,7 @@ export default function PhonePlayer({ scenes = [], audioUrl, title, introImageUr
           <span key={i} className="h-[3px] flex-1 overflow-hidden rounded-full bg-white/25">
             <span
               className="block h-full bg-white transition-[width] duration-200"
-              style={{ width: i < activeVisual ? "100%" : i === activeVisual ? `${(progress * visualItems.length - activeVisual) * 100}%` : "0%" }}
+              style={{ width: i < activeVisual ? "100%" : i === activeVisual ? `${Math.max(0, Math.min(100, activeVisualProgress * 100))}%` : "0%" }}
             />
           </span>
         ))}
