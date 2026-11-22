@@ -276,7 +276,7 @@ function drawFrame(context, scenes, bitmaps, time, callouts = {}, width = WIDTH,
       channelName: callouts.channelName,
     }, width, height);
   } else {
-    drawCover(context, bitmaps[index], progress, 1, width, height);
+    drawCover(context, bitmaps[index], progress, 1, width, height, index);
     const nextScene = scenes[index + 1];
     const transitionStart = Math.max(start, end - 0.55);
     if (nextScene && sceneTime >= transitionStart) {
