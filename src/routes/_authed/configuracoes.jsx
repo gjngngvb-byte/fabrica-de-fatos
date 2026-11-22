@@ -67,6 +67,8 @@ function Settings() {
     intro_callout: studio.intro_callout || "",
     intro_callout_enabled: studio.intro_callout_enabled !== false,
     outro_callout_enabled: studio.outro_callout_enabled !== false,
+    show_title_on_intro: studio.show_title_on_intro !== false,
+    show_channel_name_on_outro: studio.show_channel_name_on_outro !== false,
     avoid: studio.avoid || "",
     hashtagsText: (studio.base_hashtags || []).join(", "),
   });
@@ -96,6 +98,8 @@ function Settings() {
           intro_callout: form.intro_callout,
           intro_callout_enabled: Boolean(form.intro_callout_enabled),
           outro_callout_enabled: Boolean(form.outro_callout_enabled),
+          show_title_on_intro: Boolean(form.show_title_on_intro),
+          show_channel_name_on_outro: Boolean(form.show_channel_name_on_outro),
           avoid: form.avoid,
         },
       });
@@ -203,6 +207,14 @@ function Settings() {
           <label className="mt-3 flex items-start gap-3">
             <input type="checkbox" className="mt-0.5 size-4 accent-primary" checked={form.outro_callout_enabled} onChange={(e) => set("outro_callout_enabled", e.target.checked)} />
             <span><span className="block text-sm text-foreground">Chamada final</span><span className="block text-xs text-muted-foreground">Usa o encerramento e a chamada final configurada, com uma imagem exclusiva.</span></span>
+          </label>
+          <label className="mt-3 flex items-start gap-3">
+            <input type="checkbox" className="mt-0.5 size-4 accent-primary" checked={form.show_title_on_intro} onChange={(e) => set("show_title_on_intro", e.target.checked)} />
+            <span><span className="block text-sm text-foreground">Mostrar título na chamada inicial</span><span className="block text-xs text-muted-foreground">Exibe o título do vídeo junto do gancho sobre a imagem inicial, sem gravar texto na imagem gerada.</span></span>
+          </label>
+          <label className="mt-3 flex items-start gap-3">
+            <input type="checkbox" className="mt-0.5 size-4 accent-primary" checked={form.show_channel_name_on_outro} onChange={(e) => set("show_channel_name_on_outro", e.target.checked)} />
+            <span><span className="block text-sm text-foreground">Mostrar nome do canal conectado</span><span className="block text-xs text-muted-foreground">Acrescenta o nome da conta TikTok conectada abaixo da chamada final.</span></span>
           </label>
         </div>
 
