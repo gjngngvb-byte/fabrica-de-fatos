@@ -133,7 +133,19 @@ export const deleteVideo = createServerFn({ method: "POST" })
 
 export const getStudio = createServerFn({ method: "POST" })
   .middleware([requireUser])
-  .handler(async ({ context }) => { const auth = await requireContext(context); return loadStudio(auth.supabase, auth.user.id); });
+  .handler(async ({ context }) => {
+    const auth = await requireContext(context);
+    const studio = await loadStudio(auth.supabase, auth.user.id);
+    const { data: usedTopics, error } = await auth.supabase.from("videos")
+      .select("id,title,created_at")
+      .eq("created_by", auth.user.id)
+      .eq("render_status", "pronto")
+      .not("mp4_url", "is", null)
+      .neq("mp4_url", "")
+      .order("created_at", { ascending: false });
+    if (error) throw error;
+    return { ...studio, used_topics: usedTopics || [] };
+  });
 
 export const createManualVideo = createServerFn({ method: "POST" })
   .middleware([requireUser])
