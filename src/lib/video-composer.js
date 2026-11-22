@@ -205,8 +205,8 @@ function drawCalloutOverlay(context, { title = "", message = "", channelName = "
 }
 
 function drawFrame(context, scenes, bitmaps, time, callouts = {}, width = WIDTH, height = HEIGHT, totalDuration = Number(scenes[scenes.length - 1]?.end_seconds) || 0) {
-  const introDuration = callouts.introIndex !== undefined ? Math.min(3, totalDuration / 10) : 0;
-  const outroDuration = callouts.outroIndex !== undefined ? Math.min(3, totalDuration / 10) : 0;
+  const introDuration = callouts.introIndex !== undefined ? Math.max(0, Number(scenes[0]?.intro_audio_duration) || 0.8) : 0;
+  const outroDuration = callouts.outroIndex !== undefined ? Math.max(0, Number(scenes[scenes.length - 1]?.outro_audio_duration) || 0.8) : 0;
   const introActive = introDuration > 0 && time < introDuration;
   const outroStart = totalDuration - outroDuration;
   const outroActive = outroDuration > 0 && time >= outroStart;
@@ -369,8 +369,8 @@ export async function recordNarratedSlideshow(video, onProgress = () => {}) {
     if (!AudioContextClass) throw new Error("Este navegador não oferece suporte à reprodução de áudio da montagem.");
     audioContext = new AudioContextClass();
     const audioBuffer = decodePcmWav(audioContext, audioBytes);
-    if (audioBuffer.duration < 120 || audioBuffer.duration > 300) {
-      throw new Error("A narração tem " + Math.round(audioBuffer.duration) + " segundos. O limite é de 2 a 5 minutos.");
+    if (audioBuffer.duration < 120 || audioBuffer.duration > 360) {
+      throw new Error("A narração completa tem " + Math.round(audioBuffer.duration) + " segundos. O limite é de 2 a 6 minutos, incluindo as chamadas.");
     }
 
     const outputResolution = video.output_resolution === "720p"
@@ -399,11 +399,13 @@ export async function recordNarratedSlideshow(video, onProgress = () => {}) {
       throw new Error("O navegador não criou as faixas de vídeo e áudio necessárias.");
     }
 
-    const mimeType = MediaRecorder.isTypeSupported("video/webm;codecs=vp9,opus")
-      ? "video/webm;codecs=vp9,opus"
-      : MediaRecorder.isTypeSupported("video/webm;codecs=vp8,opus")
-        ? "video/webm;codecs=vp8,opus"
-        : "video/webm";
+    const nativeMp4Mime = ["video/mp4;codecs=avc1.42E01E,mp4a.40.2", "video/mp4"]
+      .find((type) => MediaRecorder.isTypeSupported(type));
+    const mimeType = nativeMp4Mime ||
+      (MediaRecorder.isTypeSupported("video/webm;codecs=vp9,opus")
+        ? "video/webm;codecs=vp9,opus"
+        : MediaRecorder.isTypeSupported("video/webm;codecs=vp8,opus")
+          ? "video/webm;codecs=vp8,opus" : "video/webm");
     recorder = new MediaRecorder(stream, {
       mimeType,
       videoBitsPerSecond: outputResolution.videoBitrate,
@@ -521,9 +523,15 @@ async function withTimeout(promise, timeoutMs, message) {
 
 export async function convertWebmToMp4(webm, onProgress = () => {}, outputResolution = "1080p") {
   if (!(webm instanceof Blob) || webm.size < 64 * 1024) {
-    throw new Error("A gravação WebM não contém dados suficientes para converter.");
+    throw new Error("A gravação de vídeo não contém dados suficientes para converter.");
   }
-  onProgress(76, "Preparando conversor MP4");
+  if (webm.type.includes("mp4")) {
+    const header = new Uint8Array(await webm.slice(0, 16).arrayBuffer());
+    if (String.fromCharCode(...header.slice(4, 8)) !== "ftyp") throw new Error("O navegador declarou MP4, mas o arquivo não passou na validação de assinatura.");
+    onProgress(98, "MP4 criado diretamente pelo navegador e validado, sem conversão adicional");
+    return webm;
+  }
+  onProgress(76, "Ativando conversor MP4 alternativo (FFmpeg no navegador)");
   const { FFmpeg } = await withTimeout(
     import("@ffmpeg/ffmpeg"),
     30000,
@@ -535,14 +543,15 @@ export async function convertWebmToMp4(webm, onProgress = () => {}, outputResolu
   try {
     const cdnBases = [
       "https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.10/dist/esm",
+      "https://fastly.jsdelivr.net/npm/@ffmpeg/core@0.12.10/dist/esm",
       "https://unpkg.com/@ffmpeg/core@0.12.10/dist/esm",
     ];
     let lastError = null;
     for (const base of cdnBases) {
       try {
-        onProgress(76, "Baixando conversor MP4 (servidor 1/2)");
+        onProgress(76, "Baixando conversor MP4 (servidor " + (cdnBases.indexOf(base) + 1) + "/3)");
         coreURL = await fetchCoreAsset(base + "/ffmpeg-core.js", "text/javascript");
-        onProgress(76, "Baixando componentes MP4 (servidor 1/2)");
+        onProgress(76, "Baixando componentes MP4 (servidor " + (cdnBases.indexOf(base) + 1) + "/3)");
         wasmURL = await fetchCoreAsset(base + "/ffmpeg-core.wasm", "application/wasm", 90000);
         lastError = null;
         break;
@@ -559,7 +568,7 @@ export async function convertWebmToMp4(webm, onProgress = () => {}, outputResolu
         (lastError?.message || ""));
     }
 
-    onProgress(77, "Inicializando conversor MP4");
+    onProgress(77, "Inicializando FFmpeg WebAssembly");
     await withTimeout(
       ffmpeg.load({ coreURL, wasmURL }),
       90000,
@@ -569,7 +578,7 @@ export async function convertWebmToMp4(webm, onProgress = () => {}, outputResolu
       const safeProgress = Math.max(0, Math.min(1, Number(progress) || 0));
       onProgress(78 + Math.round(safeProgress * 19), "Convertendo para MP4 · " + Math.round(safeProgress * 100) + "%");
     });
-    onProgress(78, "Enviando vídeo ao conversor");
+    onProgress(78, "Carregando o vídeo no conversor FFmpeg");
     await withTimeout(
       ffmpeg.writeFile("input.webm", new Uint8Array(await webm.arrayBuffer())),
       90000,
