@@ -591,7 +591,7 @@ export default function RenderBlock({ video }) {
         )}
         {!busy && render.status !== "falhou" && (
           <p className="text-center font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
-            MP4 vertical 9:16 · {outputResolution === "720p" ? "720 × 1280" : "1080 × 1920"} · duração entre 2 e 5 minutos
+            MP4 vertical 9:16 · {outputResolution === "720p" ? "720 × 1280" : "1080 × 1920"} · roteiro de 2 a 5 minutos + chamadas narradas
           </p>
         )}
       </div>
