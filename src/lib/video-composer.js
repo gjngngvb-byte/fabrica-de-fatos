@@ -182,13 +182,50 @@ function drawCover(context, bitmap, progress, alpha = 1, width = WIDTH, height =
   }
 }
 
-function drawCalloutOverlay(context, { title = "", message = "", channelName = "" } = {}, width = WIDTH, height = HEIGHT, alpha = 1) {
+function pickAccentColor(bitmap) {
+  try {
+    const sample = document.createElement("canvas");
+    sample.width = 24;
+    sample.height = 24;
+    const sampleContext = sample.getContext("2d", { willReadFrequently: true });
+    if (!sampleContext) return "#FFE36E";
+    sampleContext.drawImage(bitmap, 0, 0, 24, 24);
+    const pixels = sampleContext.getImageData(0, 0, 24, 24).data;
+    let red = 0, green = 0, blue = 0, count = 0;
+    for (let i = 0; i < pixels.length; i += 4) {
+      if (pixels[i + 3] < 100) continue;
+      red += pixels[i];
+      green += pixels[i + 1];
+      blue += pixels[i + 2];
+      count++;
+    }
+    if (!count) return "#FFE36E";
+    red /= count * 255;
+    green /= count * 255;
+    blue /= count * 255;
+    const max = Math.max(red, green, blue);
+    const min = Math.min(red, green, blue);
+    const delta = max - min;
+    let hue = 45;
+    if (delta > 0.025) {
+      if (max === red) hue = 60 * (((green - blue) / delta) % 6);
+      else if (max === green) hue = 60 * ((blue - red) / delta + 2);
+      else hue = 60 * ((red - green) / delta + 4);
+    }
+    hue = (hue + 360) % 360;
+    return "hsl(" + Math.round(hue) + ", 88%, 68%)";
+  } catch {
+    return "#FFE36E";
+  }
+}
+
+function drawCalloutOverlay(context, { title = "", message = "", channelName = "", accentColor = "#FFE36E" } = {}, width = WIDTH, height = HEIGHT, alpha = 1) {
   const scale = width / 720;
   const maxWidth = width - 112 * scale;
   const entries = [];
-  if (title) entries.push({ text: title, fontSize: 40, color: "#FFE36E", weight: "bold", gap: 12 });
+  if (title) entries.push({ text: title, fontSize: 40, color: accentColor, weight: "bold", gap: 12 });
   if (message) entries.push({ text: message, fontSize: 32, color: "#FFFFFF", weight: "bold", gap: 10 });
-  if (channelName) entries.push({ text: "no " + channelName, fontSize: 29, color: "#79E7F2", weight: "bold", gap: 0 });
+  if (channelName) entries.push({ text: "no " + channelName, fontSize: 29, color: accentColor, weight: "bold", gap: 0 });
   if (!entries.length) return;
 
   context.save();
@@ -210,7 +247,7 @@ function drawCalloutOverlay(context, { title = "", message = "", channelName = "
   drawRoundedRect(context, 38 * scale, boxY, width - 76 * scale, boxHeight, 22 * scale);
   context.fill();
   // A restrained accent strip gives the callout a designed, finished edge.
-  context.fillStyle = "#FFE36E";
+  context.fillStyle = accentColor;
   drawRoundedRect(context, width / 2 - 42 * scale, boxY + 7 * scale, 84 * scale, 5 * scale, 3 * scale);
   context.fill();
   let cursorY = boxY + padding + 5 * scale;
@@ -267,6 +304,7 @@ function drawFrame(context, scenes, bitmaps, time, callouts = {}, width = WIDTH,
     drawCalloutOverlay(context, {
       title: callouts.introTitle,
       message: callouts.introText,
+      accentColor: callouts.accentColor,
     }, width, height, introFade);
   } else if (outroActive) {
     drawCover(context, bitmaps[index], progress, 1, width, height, index);
@@ -274,6 +312,7 @@ function drawFrame(context, scenes, bitmaps, time, callouts = {}, width = WIDTH,
     drawCalloutOverlay(context, {
       message: callouts.outroText,
       channelName: callouts.channelName,
+      accentColor: callouts.accentColor,
     }, width, height);
   } else {
     drawCover(context, bitmaps[index], progress, 1, width, height, index);
@@ -334,7 +373,7 @@ function drawFrame(context, scenes, bitmaps, time, callouts = {}, width = WIDTH,
     drawRoundedRect(context, 38 * scale, boxY, width - 76 * scale, boxHeight, 20 * scale);
     context.fill();
     // Small golden accent at the top ties the subtitles to the callout design.
-    context.fillStyle = "#FFE36E";
+    context.fillStyle = callouts.accentColor || "#FFE36E";
     drawRoundedRect(context, width / 2 - 26 * scale, boxY + 6 * scale, 52 * scale, 4 * scale, 2 * scale);
     context.fill();
     lines.forEach((wordsInLine, lineIndex) => {
@@ -348,7 +387,7 @@ function drawFrame(context, scenes, bitmaps, time, callouts = {}, width = WIDTH,
         context.strokeStyle = "rgba(0,0,0,0.92)";
         context.strokeText(word, x, y);
         context.fillStyle = (wordIndex === wordsInLine.length - 1 && lineIndex === lines.length - 1)
-          ? "#FFE36E" : "#FFFFFF";
+          ? (callouts.accentColor || "#FFE36E") : "#FFFFFF";
         context.fillText(word, x, y);
         x += widths[wordIndex] + gap;
       });
@@ -429,6 +468,7 @@ export async function recordNarratedSlideshow(video, onProgress = () => {}) {
       images.push(await loadBitmap(outroCalloutUrl));
       onProgress(Math.round((images.length / totalImageCount) * 8), "Carregando imagem extra da chamada final");
     }
+    callouts.accentColor = pickAccentColor(images[0]);
 
     const audioResponse = await fetch(video.audio_url, {
       cache: "no-store",
