@@ -108,9 +108,9 @@ export const createR2VideoUpload = createServerFn({ method: "POST" })
   .validator(z.object({ videoId: z.string().uuid(), size: z.number().int().min(65536).max(5 * 1024 * 1024 * 1024) }))
   .handler(async ({ data, context }) => {
     const auth = await requireContext(context);
-    const { data: owned, error } = await auth.supabase.from("videos").select("id")
+    const { data: owned, error: ownershipError } = await auth.supabase.from("videos").select("id")
       .eq("id", data.videoId).eq("created_by", auth.user.id).maybeSingle();
-    if (error || !owned) throw new Error("Vídeo não encontrado.");
+    if (ownershipError || !owned) throw new Error("Vídeo não encontrado.");
     const { data: result, error } = await auth.supabase.functions.invoke("r2-storage", {
       body: { action: "create_upload", videoId: data.videoId, size: data.size },
     });
