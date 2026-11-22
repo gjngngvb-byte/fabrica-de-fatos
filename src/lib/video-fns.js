@@ -91,7 +91,41 @@ export const getVideo = createServerFn({ method: "POST" })
     const { data: video, error } = await auth.supabase.from("videos").select("*")
       .eq("id", data.videoId).eq("created_by", auth.user.id).maybeSingle();
     if (error) throw error;
+    if (video?.mp4_url?.startsWith("r2://")) {
+      const { createVideoDownloadUrl } = await import("@/lib/r2.server");
+      video.mp4_url = await createVideoDownloadUrl(video.mp4_url.slice(5));
+    }
     return video;
+  });
+
+export const createR2VideoUpload = createServerFn({ method: "POST" })
+  .middleware([requireUser])
+  .validator(z.object({ videoId: z.string().uuid(), size: z.number().int().min(65536).max(5 * 1024 * 1024 * 1024) }))
+  .handler(async ({ data, context }) => {
+    const auth = await requireContext(context);
+    const { data: owned, error } = await auth.supabase.from("videos").select("id")
+      .eq("id", data.videoId).eq("created_by", auth.user.id).maybeSingle();
+    if (error || !owned) throw new Error("Vídeo não encontrado.");
+    const { createVideoUploadUrl } = await import("@/lib/r2.server");
+    return createVideoUploadUrl(auth.user.id, data.videoId, data.size);
+  });
+
+export const finalizeR2VideoUpload = createServerFn({ method: "POST" })
+  .middleware([requireUser])
+  .validator(z.object({ videoId: z.string().uuid(), key: z.string().min(1).max(500), duration: z.number().min(0).max(360) }))
+  .handler(async ({ data, context }) => {
+    const auth = await requireContext(context);
+    const { finalizeVideoUpload } = await import("@/lib/r2.server");
+    const stored = await finalizeVideoUpload(auth.user.id, data.videoId, data.key);
+    const { data: updated, error } = await auth.supabase.from("videos").update({
+      mp4_url: stored.objectUrl,
+      render_status: "pronto",
+      render_error: "Longform MP4 | " + Math.round(data.duration) + "s | armazenado no Cloudflare R2",
+      status: "pronto",
+      error: "",
+    }).eq("id", data.videoId).eq("created_by", auth.user.id).select("*").single();
+    if (error) throw new Error("MP4 salvo no R2, mas não foi possível atualizar o vídeo: " + error.message);
+    return { video: updated, downloadUrl: stored.downloadUrl };
   });
 
 export const deleteVideo = createServerFn({ method: "POST" })
@@ -105,8 +139,13 @@ export const deleteVideo = createServerFn({ method: "POST" })
     if (lookupError) throw lookupError;
     if (!video) throw new Error("Vídeo não encontrado ou já excluído.");
 
+    if (String(video.mp4_url || "").startsWith("r2://")) {
+      const { deleteVideoObject } = await import("@/lib/r2.server");
+      await deleteVideoObject(video.mp4_url.slice(5));
+    }
+
     const paths = new Set([
-      userId + "/" + video.id + ".mp4",
+      ...(String(video.mp4_url || "").startsWith("r2://") ? [] : [userId + "/" + video.id + ".mp4"]),
       userId + "/" + video.id + "-narration-full.wav",
     ]);
     for (const scene of (Array.isArray(video.scenes) ? video.scenes : [])) {
