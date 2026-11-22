@@ -2,7 +2,7 @@ const WIDTH = 720;
 const HEIGHT = 1280;
 const FPS = 24;
 
-function wrapText(context, text, maxWidth) {
+function wrapText(context, text, maxWidth, maxLines = 3) {
   const words = String(text || "").split(/\s+/).filter(Boolean);
   const lines = [];
   let line = "";
@@ -16,7 +16,7 @@ function wrapText(context, text, maxWidth) {
     }
   }
   if (line) lines.push(line);
-  return lines.slice(0, 3);
+  return lines.slice(0, maxLines);
 }
 
 function drawRoundedRect(context, x, y, width, height, radius) {
@@ -176,7 +176,7 @@ function drawCalloutOverlay(context, { title = "", message = "", channelName = "
   context.textBaseline = "middle";
   const prepared = entries.map((entry) => {
     context.font = entry.weight + " " + Math.round(entry.fontSize * scale) + "px Arial, sans-serif";
-    return { ...entry, lines: wrapText(context, entry.text, maxWidth - 36 * scale) };
+    return { ...entry, lines: wrapText(context, entry.text, maxWidth - 36 * scale, 5) };
   });
   const lineHeights = prepared.map((entry) => entry.fontSize * 1.22 * scale);
   const contentHeight = prepared.reduce((sum, entry, i) =>
