@@ -174,7 +174,7 @@ function Settings() {
           />
         </Field>
 
-        <Field label="Chamada final" hint="Entra no fim da legenda de cada vídeo.">
+        <Field label="Chamada final" hint="Entra como última frase da narração quando a chamada final está ativada.">
           <input className={inputClass} value={form.cta} onChange={(e) => set("cta", e.target.value)} />
         </Field>
 
