@@ -160,7 +160,7 @@ function drawCover(context, bitmap, progress, alpha = 1) {
   }
 }
 
-function drawFrame(context, scenes, bitmaps, time) {
+function drawFrame(context, scenes, bitmaps, time, callouts = {}) {
   let index = scenes.findIndex((scene) => time >= Number(scene.start_seconds) && time < Number(scene.end_seconds));
   if (index < 0) index = time >= Number(scenes[scenes.length - 1]?.end_seconds) ? scenes.length - 1 : 0;
   const scene = scenes[index];
@@ -168,16 +168,40 @@ function drawFrame(context, scenes, bitmaps, time) {
   const end = Number(scene.end_seconds) || start + 1;
   const duration = Math.max(0.1, end - start);
   const progress = Math.max(0, Math.min(1, (time - start) / duration));
+  const introDuration = callouts.introIndex !== undefined ? Math.min(3, duration) : 0;
+  const outroDuration = callouts.outroIndex !== undefined ? Math.min(3, duration) : 0;
+  const introActive = introDuration > 0 && time < start + introDuration;
+  const outroStart = end - outroDuration;
+  const outroActive = outroDuration > 0 && time >= outroStart;
+  const activeBitmap = introActive
+    ? bitmaps[callouts.introIndex]
+    : outroActive
+      ? bitmaps[callouts.outroIndex]
+      : bitmaps[index];
+  const imageProgress = introActive
+    ? Math.max(0, Math.min(1, (time - start) / introDuration))
+    : outroActive
+      ? Math.max(0, Math.min(1, (time - outroStart) / outroDuration))
+      : progress;
 
   context.fillStyle = "#080808";
   context.fillRect(0, 0, WIDTH, HEIGHT);
-  drawCover(context, bitmaps[index], progress);
+  drawCover(context, activeBitmap, imageProgress);
 
-  const nextScene = scenes[index + 1];
-  const transitionStart = Math.max(start, end - 0.55);
-  if (nextScene && time >= transitionStart) {
-    const nextProgress = Math.min(1, (time - transitionStart) / 0.55);
-    drawCover(context, bitmaps[index + 1], 0, nextProgress);
+  if (introActive && time >= start + introDuration - 0.55) {
+    const alpha = Math.min(1, (time - (start + introDuration - 0.55)) / 0.55);
+    drawCover(context, bitmaps[0], 0, alpha);
+  } else if (outroActive && time < outroStart + 0.55) {
+    const alpha = Math.min(1, (time - outroStart) / 0.55);
+    drawCover(context, bitmaps[index], progress, 1 - alpha);
+    drawCover(context, bitmaps[callouts.outroIndex], imageProgress, alpha);
+  } else if (!introActive && !outroActive) {
+    const nextScene = scenes[index + 1];
+    const transitionStart = Math.max(start, end - 0.55);
+    if (nextScene && time >= transitionStart) {
+      const nextProgress = Math.min(1, (time - transitionStart) / 0.55);
+      drawCover(context, bitmaps[index + 1], 0, nextProgress);
+    }
   }
 
   const caption = (scene.captions || []).find((item) => time >= Number(item.start_seconds) && time < Number(item.end_seconds));
@@ -204,7 +228,6 @@ function drawFrame(context, scenes, bitmaps, time) {
     context.restore();
   }
 }
-
 export async function recordNarratedSlideshow(video, onProgress = () => {}) {
   if (!navigator.mediaDevices || typeof MediaRecorder === "undefined") {
     throw new Error("Este navegador não oferece gravação de vídeo. Abra o estúdio no Chrome ou Edge atualizado.");
@@ -243,10 +266,24 @@ export async function recordNarratedSlideshow(video, onProgress = () => {}) {
 
   try {
     onProgress(0, "Carregando imagens e narração");
+    const callouts = {};
+    const totalImageCount = scenes.length +
+      Number(Boolean(scenes[0]?.intro_callout_image_url)) +
+      Number(Boolean(scenes[14]?.outro_callout_image_url));
     for (let i = 0; i < scenes.length; i++) {
       if (!scenes[i]?.image_url) throw new Error("A cena " + (i + 1) + " não possui imagem.");
       images.push(await loadBitmap(scenes[i].image_url));
-      onProgress(Math.round(((i + 1) / scenes.length) * 8), "Carregando imagem " + (i + 1) + " de " + scenes.length);
+      onProgress(Math.round(((i + 1) / totalImageCount) * 8), "Carregando imagem principal " + (i + 1) + " de 15");
+    }
+    if (scenes[0]?.intro_callout_image_url) {
+      callouts.introIndex = images.length;
+      images.push(await loadBitmap(scenes[0].intro_callout_image_url));
+      onProgress(Math.round((images.length / totalImageCount) * 8), "Carregando imagem extra da chamada inicial");
+    }
+    if (scenes[14]?.outro_callout_image_url) {
+      callouts.outroIndex = images.length;
+      images.push(await loadBitmap(scenes[14].outro_callout_image_url));
+      onProgress(Math.round((images.length / totalImageCount) * 8), "Carregando imagem extra da chamada final");
     }
 
     const audioResponse = await fetch(video.audio_url, {
@@ -271,7 +308,7 @@ export async function recordNarratedSlideshow(video, onProgress = () => {}) {
     canvas.height = HEIGHT;
     const context = canvas.getContext("2d", { alpha: false });
     if (!context) throw new Error("Não foi possível preparar a tela de composição.");
-    drawFrame(context, scenes, images, 0);
+    drawFrame(context, scenes, images, 0, callouts);
 
     if (typeof canvas.captureStream !== "function") {
       throw new Error("Este navegador não permite capturar a composição do vídeo.");
@@ -343,7 +380,7 @@ export async function recordNarratedSlideshow(video, onProgress = () => {}) {
             throw new Error("O relógio de áudio parou de avançar. Mantenha a aba da Fábrica de Fatos em primeiro plano e tente novamente.");
           }
           const elapsed = Math.max(0, now - startAt);
-          drawFrame(context, scenes, images, Math.min(audioBuffer.duration, elapsed));
+          drawFrame(context, scenes, images, Math.min(audioBuffer.duration, elapsed), callouts);
           onProgress(
             8 + Math.round((elapsed / audioBuffer.duration) * 67),
             "Sincronizando cenas e legendas · " + Math.min(100, Math.round((elapsed / audioBuffer.duration) * 100)) + "%",
