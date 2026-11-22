@@ -268,11 +268,18 @@ export async function recordNarratedSlideshow(video, onProgress = () => {}) {
   try {
     onProgress(0, "Carregando imagens e narração");
     const callouts = {};
-    const introCalloutUrl = video.intro_callout_enabled === false ? "" : scenes[0]?.intro_callout_image_url;
-    const outroCalloutUrl = video.outro_callout_enabled === false ? "" : scenes[14]?.outro_callout_image_url;
+    const introEnabled = video.intro_callout_enabled !== false;
+    const outroEnabled = video.outro_callout_enabled !== false;
+    const introCalloutUrl = introEnabled ? scenes[0]?.intro_callout_image_url : "";
+    const outroCalloutUrl = outroEnabled ? scenes[14]?.outro_callout_image_url : "";
+    if (introEnabled && !introCalloutUrl) throw new Error("A chamada inicial está ativada, mas a imagem não foi encontrada.");
+    if (outroEnabled && !outroCalloutUrl) throw new Error("A chamada final está ativada, mas a imagem não foi encontrada.");
     const totalImageCount = scenes.length +
       Number(Boolean(introCalloutUrl)) +
       Number(Boolean(outroCalloutUrl));
+    if (introEnabled && outroEnabled && totalImageCount !== 17) {
+      throw new Error("A montagem recebeu " + totalImageCount + " imagens. São obrigatórias 17: chamada inicial + 15 cenas + chamada final.");
+    }
     for (let i = 0; i < scenes.length; i++) {
       if (!scenes[i]?.image_url) throw new Error("A cena " + (i + 1) + " não possui imagem.");
       images.push(await loadBitmap(scenes[i].image_url));
