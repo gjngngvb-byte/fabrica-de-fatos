@@ -200,7 +200,7 @@ function drawFrame(context, scenes, bitmaps, time, callouts = {}, width = WIDTH,
       const transitionStart = Math.max(start, end - 0.55);
       if (nextScene && time >= transitionStart) {
         const nextProgress = Math.min(1, (time - transitionStart) / 0.55);
-        drawCover(context, bitmaps[index + 1], 0, nextProgress, 1, width, height);
+        drawCover(context, bitmaps[index + 1], 0, nextProgress, width, height);
       }
     }
   }
