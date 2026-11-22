@@ -160,52 +160,56 @@ function drawCover(context, bitmap, progress, alpha = 1, width = WIDTH, height =
   }
 }
 
-function drawFrame(context, scenes, bitmaps, time, callouts = {}, width = WIDTH, height = HEIGHT) {
-  let index = scenes.findIndex((scene) => time >= Number(scene.start_seconds) && time < Number(scene.end_seconds));
-  if (index < 0) index = time >= Number(scenes[scenes.length - 1]?.end_seconds) ? scenes.length - 1 : 0;
+function drawFrame(context, scenes, bitmaps, time, callouts = {}, width = WIDTH, height = HEIGHT, totalDuration = Number(scenes[scenes.length - 1]?.end_seconds) || 0) {
+  const introDuration = callouts.introIndex !== undefined ? Math.min(3, totalDuration / 10) : 0;
+  const outroDuration = callouts.outroIndex !== undefined ? Math.min(3, totalDuration / 10) : 0;
+  const mainDuration = Math.max(0.1, totalDuration - introDuration - outroDuration);
+  const introActive = introDuration > 0 && time < introDuration;
+  const outroStart = totalDuration - outroDuration;
+  const outroActive = outroDuration > 0 && time >= outroStart;
+
+  // The callout images are independent opening/closing shots. The fifteen
+  // script images occupy the full middle section, without replacing a scene.
+  const sceneTime = introActive
+    ? 0
+    : outroActive
+      ? totalDuration
+      : Math.max(0, Math.min(totalDuration, ((time - introDuration) / mainDuration) * totalDuration));
+  let index = scenes.findIndex((scene) =>
+    sceneTime >= Number(scene.start_seconds) && sceneTime < Number(scene.end_seconds)
+  );
+  if (index < 0) index = sceneTime >= Number(scenes[scenes.length - 1]?.end_seconds) ? scenes.length - 1 : 0;
   const scene = scenes[index];
   const start = Number(scene.start_seconds) || 0;
   const end = Number(scene.end_seconds) || start + 1;
   const duration = Math.max(0.1, end - start);
-  const progress = Math.max(0, Math.min(1, (time - start) / duration));
-  const introDuration = callouts.introIndex !== undefined ? Math.min(3, duration) : 0;
-  const outroDuration = callouts.outroIndex !== undefined ? Math.min(3, duration) : 0;
-  const introActive = introDuration > 0 && time < start + introDuration;
-  const outroStart = end - outroDuration;
-  const outroActive = outroDuration > 0 && time >= outroStart;
-  const activeBitmap = introActive
-    ? bitmaps[callouts.introIndex]
-    : outroActive
-      ? bitmaps[callouts.outroIndex]
-      : bitmaps[index];
-  const imageProgress = introActive
-    ? Math.max(0, Math.min(1, (time - start) / introDuration))
-    : outroActive
-      ? Math.max(0, Math.min(1, (time - outroStart) / outroDuration))
-      : progress;
+  const progress = Math.max(0, Math.min(1, (sceneTime - start) / duration));
 
   context.fillStyle = "#080808";
   context.fillRect(0, 0, width, height);
-  if (outroActive && time < outroStart + 0.55) {
-    const alpha = Math.min(1, (time - outroStart) / 0.55);
+
+  if (introActive) {
+    drawCover(context, bitmaps[callouts.introIndex], time / Math.max(0.1, introDuration), 1, width, height);
+    if (time >= introDuration - 0.45) {
+      drawCover(context, bitmaps[0], 0, Math.min(1, (time - (introDuration - 0.45)) / 0.45), width, height);
+    }
+  } else if (outroActive) {
     drawCover(context, bitmaps[index], progress, 1, width, height);
-    drawCover(context, bitmaps[callouts.outroIndex], imageProgress, alpha, width, height);
+    drawCover(context, bitmaps[callouts.outroIndex], (time - outroStart) / Math.max(0.1, outroDuration), Math.min(1, (time - outroStart) / 0.45), width, height);
   } else {
-    drawCover(context, activeBitmap, imageProgress, 1, width, height);
-    if (introActive && time >= start + introDuration - 0.55) {
-      const alpha = Math.min(1, (time - (start + introDuration - 0.55)) / 0.55);
-      drawCover(context, bitmaps[0], 0, alpha, width, height);
-    } else if (!introActive && !outroActive) {
-      const nextScene = scenes[index + 1];
-      const transitionStart = Math.max(start, end - 0.55);
-      if (nextScene && time >= transitionStart) {
-        const nextProgress = Math.min(1, (time - transitionStart) / 0.55);
-        drawCover(context, bitmaps[index + 1], 0, nextProgress, width, height);
-      }
+    drawCover(context, bitmaps[index], progress, 1, width, height);
+    const nextScene = scenes[index + 1];
+    const transitionStart = Math.max(start, end - 0.55);
+    if (nextScene && sceneTime >= transitionStart) {
+      const nextProgress = Math.min(1, (sceneTime - transitionStart) / 0.55);
+      drawCover(context, bitmaps[index + 1], 0, nextProgress, width, height);
     }
   }
 
-  const caption = (scene.captions || []).find((item) => time >= Number(item.start_seconds) && time < Number(item.end_seconds));
+  // Captions remain synchronized to the original audio clock.
+  const caption = (scene.captions || []).find((item) =>
+    time >= Number(item.start_seconds) && time < Number(item.end_seconds)
+  );
   if (caption?.text) {
     context.save();
     const scale = width / 720;
@@ -315,7 +319,7 @@ export async function recordNarratedSlideshow(video, onProgress = () => {}) {
     canvas.height = outputResolution.height;
     const context = canvas.getContext("2d", { alpha: false });
     if (!context) throw new Error("Não foi possível preparar a tela de composição.");
-    drawFrame(context, scenes, images, 0, callouts, outputResolution.width, outputResolution.height);
+    drawFrame(context, scenes, images, 0, callouts, outputResolution.width, outputResolution.height, audioBuffer.duration);
 
     if (typeof canvas.captureStream !== "function") {
       throw new Error("Este navegador não permite capturar a composição do vídeo.");
@@ -387,7 +391,7 @@ export async function recordNarratedSlideshow(video, onProgress = () => {}) {
             throw new Error("O relógio de áudio parou de avançar. Mantenha a aba da Fábrica de Fatos em primeiro plano e tente novamente.");
           }
           const elapsed = Math.max(0, now - startAt);
-          drawFrame(context, scenes, images, Math.min(audioBuffer.duration, elapsed), callouts, outputResolution.width, outputResolution.height);
+          drawFrame(context, scenes, images, Math.min(audioBuffer.duration, elapsed), callouts, outputResolution.width, outputResolution.height, audioBuffer.duration);
           onProgress(
             8 + Math.round((elapsed / audioBuffer.duration) * 67),
             "Sincronizando cenas e legendas · " + Math.min(100, Math.round((elapsed / audioBuffer.duration) * 100)) + "%",
