@@ -62,6 +62,7 @@ function Settings() {
     videos_per_day: studio.videos_per_day || 5,
     duration_target: Math.min(300, Math.max(120, studio.duration_target || 180)),
     output_resolution: studio.output_resolution === "720p" ? "720p" : "1080p",
+    auto_resume_enabled: studio.auto_resume_enabled !== false,
     visual_style: studio.visual_style || "",
     cta: studio.cta || "",
     intro_callout: studio.intro_callout || "",
@@ -88,6 +89,7 @@ function Settings() {
           videos_per_day: Number(form.videos_per_day) || 5,
           duration_target: Number(form.duration_target) || 30,
           output_resolution: form.output_resolution,
+          auto_resume_enabled: Boolean(form.auto_resume_enabled),
           visual_style: form.visual_style,
           base_hashtags: form.hashtagsText
             .split(",")
@@ -179,6 +181,15 @@ function Settings() {
             <option value="720p" className="bg-card">HD · 720 × 1280</option>
           </select>
         </Field>
+
+        <section className="rounded-xl border border-border bg-card/40 p-4">
+          <p className="text-sm font-medium text-foreground">Retomada automática</p>
+          <p className="mt-1 text-xs text-muted-foreground">Quando uma etapa falhar ou a produção for interrompida, a fábrica tenta continuar do último ponto salvo, reaproveitando imagens e áudios já concluídos. Você pode desativar quando quiser.</p>
+          <label className="mt-4 flex items-start gap-3">
+            <input type="checkbox" className="mt-0.5 size-4 accent-primary" checked={form.auto_resume_enabled} onChange={(e) => set("auto_resume_enabled", e.target.checked)} />
+            <span><span className="block text-sm text-foreground">Tentar retomar automaticamente após erros</span><span className="block text-xs text-muted-foreground">Ativada por padrão. As tentativas usam espera progressiva e não reiniciam as etapas já concluídas.</span></span>
+          </label>
+        </section>
 
         <Field label="Estilo visual" hint="Aparece em toda imagem gerada.">
           <textarea
