@@ -3,15 +3,32 @@ import { Play, Pause } from "lucide-react";
 import { Image } from "@/components/ui/image";
 import { cn } from "@/lib/utils";
 
-export default function PhonePlayer({ scenes = [], audioUrl, title }) {
+export default function PhonePlayer({ scenes = [], audioUrl, title, introImageUrl = "", outroImageUrl = "" }) {
   const audioRef = useRef(null);
   const [playing, setPlaying] = useState(false);
   const [progress, setProgress] = useState(0);
-  const total = scenes.length || 1;
-  const active = Math.min(total - 1, Math.floor(progress * total));
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const introDuration = introImageUrl ? 3 : 0;
+  const outroDuration = outroImageUrl ? 3 : 0;
+  const mainDuration = Math.max(0.1, duration - introDuration - outroDuration);
+  const introActive = Boolean(introImageUrl) && currentTime < introDuration;
+  const outroActive = Boolean(outroImageUrl) && duration > 0 && currentTime >= duration - outroDuration;
+  const sceneProgress = duration > 0
+    ? Math.max(0, Math.min(0.9999, (currentTime - introDuration) / mainDuration))
+    : progress;
+  const active = Math.min(Math.max(0, scenes.length - 1), Math.floor(sceneProgress * scenes.length));
+  const visualItems = [
+    ...(introImageUrl ? [{ type: "intro", image_url: introImageUrl }] : []),
+    ...scenes.map((scene) => ({ type: "scene", ...scene })),
+    ...(outroImageUrl ? [{ type: "outro", image_url: outroImageUrl }] : []),
+  ];
+  const activeVisual = introActive ? 0 : outroActive ? visualItems.length - 1 : active + (introImageUrl ? 1 : 0);
 
   useEffect(() => {
     setProgress(0);
+    setCurrentTime(0);
+    setDuration(0);
     setPlaying(false);
   }, [audioUrl]);
 
@@ -30,7 +47,11 @@ export default function PhonePlayer({ scenes = [], audioUrl, title }) {
 
   const onTime = () => {
     const el = audioRef.current;
-    if (el?.duration) setProgress(el.currentTime / el.duration);
+    if (el?.duration) {
+      setProgress(el.currentTime / el.duration);
+      setCurrentTime(el.currentTime);
+      setDuration(el.duration);
+    }
   };
 
   return (
@@ -41,12 +62,12 @@ export default function PhonePlayer({ scenes = [], audioUrl, title }) {
         </div>
       )}
 
-      {scenes.map((scene, i) => (
+      {visualItems.map((scene, i) => (
         <div
           key={i}
           className={cn(
             "absolute inset-0 transition-opacity duration-700",
-            i === active ? "opacity-100" : "opacity-0",
+            i === activeVisual ? "opacity-100" : "opacity-0",
           )}
         >
           {scene.image_url ? (
@@ -56,7 +77,7 @@ export default function PhonePlayer({ scenes = [], audioUrl, title }) {
               fittingType="fill"
               className="size-full object-cover transition-transform ease-out"
               style={{
-                transform: i === active && playing ? "scale(1.08)" : "scale(1)",
+                transform: i === activeVisual && playing ? "scale(1.08)" : "scale(1)",
                 transitionDuration: "7000ms",
               }}
             />
@@ -69,11 +90,11 @@ export default function PhonePlayer({ scenes = [], audioUrl, title }) {
       <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/90 via-black/5 to-black/45" />
 
       <div className="absolute inset-x-3 top-3 flex gap-1">
-        {scenes.map((_, i) => (
+        {visualItems.map((_, i) => (
           <span key={i} className="h-[3px] flex-1 overflow-hidden rounded-full bg-white/25">
             <span
               className="block h-full bg-white transition-[width] duration-200"
-              style={{ width: i < active ? "100%" : i === active ? `${(progress * total - active) * 100}%` : "0%" }}
+              style={{ width: i < activeVisual ? "100%" : i === activeVisual ? `${(progress * visualItems.length - activeVisual) * 100}%` : "0%" }}
             />
           </span>
         ))}
@@ -81,7 +102,7 @@ export default function PhonePlayer({ scenes = [], audioUrl, title }) {
 
       <div className="absolute inset-x-0 bottom-0 p-5">
         <p className="line-clamp-4 text-[13px] font-medium leading-snug text-white drop-shadow">
-          {scenes[active]?.narration || title}
+          {introActive ? (scenes[0]?.narration || title) : outroActive ? (scenes[scenes.length - 1]?.narration || title) : (scenes[active]?.narration || title)}
         </p>
       </div>
 
