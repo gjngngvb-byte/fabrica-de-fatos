@@ -63,6 +63,7 @@ function Settings() {
     duration_target: Math.min(300, Math.max(120, studio.duration_target || 180)),
     visual_style: studio.visual_style || "",
     cta: studio.cta || "",
+    intro_callout: studio.intro_callout || "",
     intro_callout_enabled: studio.intro_callout_enabled !== false,
     outro_callout_enabled: studio.outro_callout_enabled !== false,
     avoid: studio.avoid || "",
@@ -90,6 +91,7 @@ function Settings() {
             .filter(Boolean)
             .slice(0, 10),
           cta: form.cta,
+          intro_callout: form.intro_callout,
           intro_callout_enabled: Boolean(form.intro_callout_enabled),
           outro_callout_enabled: Boolean(form.outro_callout_enabled),
           avoid: form.avoid,
@@ -172,6 +174,10 @@ function Settings() {
             value={form.visual_style}
             onChange={(e) => set("visual_style", e.target.value)}
           />
+        </Field>
+
+        <Field label="Chamada inicial" hint="Texto falado para abrir o vídeo. Se deixar vazio, a IA cria um gancho adequado ao roteiro.">
+          <input className={inputClass} value={form.intro_callout} onChange={(e) => set("intro_callout", e.target.value)} placeholder="Ex.: Você não vai acreditar no que acontece..." />
         </Field>
 
         <Field label="Chamada final" hint="Entra como última frase da narração quando a chamada final está ativada.">
