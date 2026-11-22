@@ -41,6 +41,8 @@ const DEFAULT_STUDIO = {
   intro_callout: "",
   intro_callout_enabled: true,
   outro_callout_enabled: true,
+  show_title_on_intro: true,
+  show_channel_name_on_outro: true,
   avoid: "",
 };
 
@@ -222,7 +224,8 @@ export const saveStudio = createServerFn({ method: "POST" })
     videos_per_day: z.number().min(1).max(10), duration_target: z.number().min(120).max(300),
     output_resolution: z.enum(["720p", "1080p"]).default("1080p"),
     visual_style: z.string().max(400), base_hashtags: z.array(z.string().max(40)).max(10),
-    cta: z.string().max(200), intro_callout: z.string().max(200).default(""), intro_callout_enabled: z.boolean().default(true), outro_callout_enabled: z.boolean().default(true), avoid: z.string().max(300),
+    cta: z.string().max(200), intro_callout: z.string().max(200).default(""), intro_callout_enabled: z.boolean().default(true), outro_callout_enabled: z.boolean().default(true),
+    show_title_on_intro: z.boolean().default(true), show_channel_name_on_outro: z.boolean().default(true), avoid: z.string().max(300),
   }))
   .handler(async ({ data, context }) => {
     const auth = await requireContext(context);
