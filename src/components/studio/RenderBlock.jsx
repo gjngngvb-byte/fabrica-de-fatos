@@ -368,7 +368,7 @@ export default function RenderBlock({ video }) {
         clearTimeout(retryTimerRef.current);
         retryTimerRef.current = null;
       }
-      setRender({ status: "pronto", url: updated.mp4_url, error: "", progress: 100, detail: "MP4 validado e salvo." });
+      setRender({ status: "pronto", url: saved.downloadUrl, error: "", progress: 100, detail: "MP4 validado e salvo no Cloudflare R2." });
       toast.success("Vídeo completo de " + Math.round(duration / 60 * 10) / 10 + " minutos pronto!");
       router.invalidate();
     } catch (error) {
