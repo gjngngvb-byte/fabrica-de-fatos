@@ -375,9 +375,15 @@ export async function recordNarratedSlideshow(video, onProgress = () => {}) {
       throw new Error("A narração completa tem " + Math.round(audioBuffer.duration) + " segundos. O limite é de 2 a 6 minutos, incluindo as chamadas.");
     }
 
+    // Supabase Free accepts files up to 50 MiB. Keep a safety margin for MP4
+    // container overhead and AAC audio while preserving the selected resolution.
+    const maxUploadBytes = 44 * 1024 * 1024;
+    const audioBitrate = 96_000;
+    const targetTotalBitrate = Math.floor((maxUploadBytes * 8 * 0.88) / audioBuffer.duration);
+    const uploadSafeVideoBitrate = Math.max(500_000, targetTotalBitrate - audioBitrate);
     const outputResolution = video.output_resolution === "720p"
-      ? { width: 720, height: 1280, videoBitrate: 3_000_000 }
-      : { width: 1080, height: 1920, videoBitrate: 6_000_000 };
+      ? { width: 720, height: 1280, videoBitrate: uploadSafeVideoBitrate }
+      : { width: 1080, height: 1920, videoBitrate: uploadSafeVideoBitrate };
     const canvas = document.createElement("canvas");
     canvas.width = outputResolution.width;
     canvas.height = outputResolution.height;
@@ -542,15 +548,20 @@ async function withTimeout(promise, timeoutMs, message) {
   }
 }
 
-export async function convertWebmToMp4(webm, onProgress = () => {}, outputResolution = "1080p") {
+export async function convertWebmToMp4(webm, onProgress = () => {}, outputResolution = "1080p", durationSeconds = 300) {
   if (!(webm instanceof Blob) || webm.size < 64 * 1024) {
     throw new Error("A gravação de vídeo não contém dados suficientes para converter.");
   }
-  if (webm.type.includes("mp4")) {
+  const maxUploadBytes = 44 * 1024 * 1024;
+  const isMp4Input = webm.type.includes("mp4");
+  if (isMp4Input) {
     const header = new Uint8Array(await webm.slice(0, 16).arrayBuffer());
     if (String.fromCharCode(...header.slice(4, 8)) !== "ftyp") throw new Error("O navegador declarou MP4, mas o arquivo não passou na validação de assinatura.");
-    onProgress(98, "MP4 criado diretamente pelo navegador e validado, sem conversão adicional");
-    return webm;
+    if (webm.size <= maxUploadBytes) {
+      onProgress(98, "MP4 direto validado e dentro do limite do armazenamento");
+      return webm;
+    }
+    onProgress(76, "MP4 ultrapassou o limite gratuito. Reduzindo o tamanho para armazenamento seguro.");
   }
   onProgress(76, "Ativando conversor MP4 alternativo (FFmpeg no navegador)");
   const { FFmpeg } = await withTimeout(
@@ -606,16 +617,20 @@ export async function convertWebmToMp4(webm, onProgress = () => {}, outputResolu
       "O vídeo demorou demais para ser carregado no conversor MP4.",
     );
     const is720p = outputResolution === "720p";
-    const videoBitrate = is720p ? "2200k" : "4800k";
-    const maxVideoBitrate = is720p ? "2600k" : "5500k";
-    const videoBuffer = is720p ? "5200k" : "11000k";
+    const safeDuration = Math.max(120, Math.min(360, Number(durationSeconds) || 300));
+    const targetTotalBitrate = Math.floor((maxUploadBytes * 8 * 0.84) / safeDuration);
+    const targetVideoBitrate = Math.max(450_000, targetTotalBitrate - 96_000);
+    const videoBitrate = Math.round(targetVideoBitrate / 1000) + "k";
+    const maxVideoBitrate = Math.round(targetVideoBitrate * 1.08 / 1000) + "k";
+    const videoBuffer = Math.round(targetVideoBitrate * 2 / 1000) + "k";
+    const inputName = isMp4Input ? "input.mp4" : "input.webm";
     const code = await withTimeout(
       ffmpeg.exec([
-        "-i", "input.webm",
+        "-i", inputName,
         "-map", "0:v:0",
         "-map", "0:a:0",
         "-c:v", "libx264",
-        "-preset", "ultrafast",
+        "-preset", "veryfast",
         "-b:v", videoBitrate, "-maxrate", maxVideoBitrate, "-bufsize", videoBuffer,
         "-pix_fmt", "yuv420p",
         "-r", String(FPS),
@@ -636,6 +651,10 @@ export async function convertWebmToMp4(webm, onProgress = () => {}, outputResolu
     );
     const mp4 = new Blob([output], { type: "video/mp4" });
     if (mp4.size < 64 * 1024) throw new Error("O MP4 final ficou pequeno demais e não passou na validação.");
+    if (mp4.size > 48 * 1024 * 1024) {
+      throw new Error("O MP4 ainda ficou com " + (mp4.size / 1024 / 1024).toFixed(1) +
+        " MiB após a compressão. O limite do Supabase Free é 50 MiB. Reduza a duração ou use armazenamento com limite maior.");
+    }
     const header = new Uint8Array(await mp4.slice(0, 16).arrayBuffer());
     if (String.fromCharCode(...header.slice(4, 8)) !== "ftyp") throw new Error("O arquivo gerado não tem assinatura MP4 válida.");
     onProgress(98, "MP4 validado");
