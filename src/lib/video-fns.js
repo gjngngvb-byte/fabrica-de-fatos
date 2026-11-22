@@ -33,7 +33,7 @@ const DEFAULT_STUDIO = {
   language: "pt-BR",
   voice: "river",
   videos_per_day: 5,
-  duration_target: 180,
+  duration_target: 300,
   visual_style: "fotografia documental cinematográfica, luz natural dramática, cores ricas, textura de filme 35mm",
   base_hashtags: ["fatoscuriosos", "vocesabia", "curiosidades"],
   cta: "Segue para mais um fato por dia.",
