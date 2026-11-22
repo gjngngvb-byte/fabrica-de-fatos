@@ -3,7 +3,10 @@ import { Play, Pause } from "lucide-react";
 import { Image } from "@/components/ui/image";
 import { cn } from "@/lib/utils";
 
-export default function PhonePlayer({ scenes = [], audioUrl, title, introImageUrl = "", outroImageUrl = "" }) {
+export default function PhonePlayer({
+  scenes = [], audioUrl, title, introImageUrl = "", outroImageUrl = "",
+  introText = "", introTitle = "", outroText = "", channelName = "",
+}) {
   const audioRef = useRef(null);
   const [playing, setPlaying] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -110,9 +113,21 @@ export default function PhonePlayer({ scenes = [], audioUrl, title, introImageUr
       </div>
 
       <div className="absolute inset-x-0 bottom-0 p-5">
-        <p className="line-clamp-4 text-[13px] font-medium leading-snug text-white drop-shadow">
-          {introActive ? (scenes[0]?.narration || title) : outroActive ? (scenes[scenes.length - 1]?.narration || title) : (scenes[active]?.narration || title)}
-        </p>
+        {introActive ? (
+          <div className="rounded-xl bg-black/55 p-3 text-center text-white shadow-lg backdrop-blur-sm">
+            {introTitle && <p className="mb-2 text-base font-bold leading-tight drop-shadow">{introTitle}</p>}
+            {introText && <p className="text-sm font-medium leading-snug drop-shadow">{introText}</p>}
+          </div>
+        ) : outroActive ? (
+          <div className="rounded-xl bg-black/55 p-3 text-center text-white shadow-lg backdrop-blur-sm">
+            {outroText && <p className="text-sm font-semibold leading-snug drop-shadow">{outroText}</p>}
+            {channelName && <p className="mt-2 text-sm font-bold leading-snug drop-shadow">no {channelName}</p>}
+          </div>
+        ) : (
+          <p className="line-clamp-4 text-[13px] font-medium leading-snug text-white drop-shadow">
+            {scenes[active]?.narration || title}
+          </p>
+        )}
       </div>
 
       <button
