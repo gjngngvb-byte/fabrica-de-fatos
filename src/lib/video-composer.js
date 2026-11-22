@@ -376,46 +376,120 @@ export async function recordNarratedSlideshow(video, onProgress = () => {}) {
   }
 }
 
+async function fetchCoreAsset(url, mimeType, timeoutMs = 45000) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url, { signal: controller.signal, cache: "force-cache" });
+    if (!response.ok) throw new Error("HTTP " + response.status + " ao baixar " + url);
+    const blob = await response.blob();
+    if (!blob.size) throw new Error("O arquivo do conversor veio vazio: " + url);
+    return URL.createObjectURL(new Blob([blob], { type: mimeType }));
+  } catch (error) {
+    if (error?.name === "AbortError") {
+      throw new Error("Tempo limite ao baixar o conversor MP4. O servidor externo não respondeu.");
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function withTimeout(promise, timeoutMs, message) {
+  let timer;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error(message)), timeoutMs);
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export async function convertWebmToMp4(webm, onProgress = () => {}) {
   if (!(webm instanceof Blob) || webm.size < 64 * 1024) {
     throw new Error("A gravação WebM não contém dados suficientes para converter.");
   }
-  onProgress(76, "Carregando conversor MP4");
-  const [{ FFmpeg }, { toBlobURL }] = await Promise.all([
+  onProgress(76, "Preparando conversor MP4");
+  const { FFmpeg } = await withTimeout(
     import("@ffmpeg/ffmpeg"),
-    import("@ffmpeg/util"),
-  ]);
+    30000,
+    "O módulo do conversor MP4 demorou demais para carregar. Atualize a página e tente novamente.",
+  );
   const ffmpeg = new FFmpeg();
   let coreURL = "";
   let wasmURL = "";
   try {
-    // Vite must load the ESM core build. The UMD build fails inside the FFmpeg worker.
-    const base = "https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.10/dist/esm";
-    coreURL = await toBlobURL(base + "/ffmpeg-core.js", "text/javascript");
-    wasmURL = await toBlobURL(base + "/ffmpeg-core.wasm", "application/wasm");
-    await ffmpeg.load({ coreURL, wasmURL });
+    const cdnBases = [
+      "https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.10/dist/esm",
+      "https://unpkg.com/@ffmpeg/core@0.12.10/dist/esm",
+    ];
+    let lastError = null;
+    for (const base of cdnBases) {
+      try {
+        onProgress(76, "Baixando conversor MP4 (servidor 1/2)");
+        coreURL = await fetchCoreAsset(base + "/ffmpeg-core.js", "text/javascript");
+        onProgress(76, "Baixando componentes MP4 (servidor 1/2)");
+        wasmURL = await fetchCoreAsset(base + "/ffmpeg-core.wasm", "application/wasm", 90000);
+        lastError = null;
+        break;
+      } catch (error) {
+        lastError = error;
+        if (coreURL) URL.revokeObjectURL(coreURL);
+        if (wasmURL) URL.revokeObjectURL(wasmURL);
+        coreURL = "";
+        wasmURL = "";
+      }
+    }
+    if (lastError || !coreURL || !wasmURL) {
+      throw new Error("Não foi possível baixar o conversor MP4 nos dois servidores gratuitos. " +
+        (lastError?.message || ""));
+    }
+
+    onProgress(77, "Inicializando conversor MP4");
+    await withTimeout(
+      ffmpeg.load({ coreURL, wasmURL }),
+      90000,
+      "O conversor MP4 não inicializou em 90 segundos. Verifique a conexão e tente novamente.",
+    );
     ffmpeg.on("progress", ({ progress }) => {
       const safeProgress = Math.max(0, Math.min(1, Number(progress) || 0));
       onProgress(78 + Math.round(safeProgress * 19), "Convertendo para MP4 · " + Math.round(safeProgress * 100) + "%");
     });
-    await ffmpeg.writeFile("input.webm", new Uint8Array(await webm.arrayBuffer()));
-    const code = await ffmpeg.exec([
-      "-i", "input.webm",
-      "-map", "0:v:0",
-      "-map", "0:a:0",
-      "-c:v", "libx264",
-      "-preset", "ultrafast",
-      "-b:v", "900k", "-maxrate", "1000k", "-bufsize", "2000k",
-      "-pix_fmt", "yuv420p",
-      "-r", String(FPS),
-      "-c:a", "aac",
-      "-b:a", "96k",
-      "-movflags", "+faststart",
-      "-shortest",
-      "output.mp4",
-    ]);
+    onProgress(78, "Enviando vídeo ao conversor");
+    await withTimeout(
+      ffmpeg.writeFile("input.webm", new Uint8Array(await webm.arrayBuffer())),
+      90000,
+      "O vídeo demorou demais para ser carregado no conversor MP4.",
+    );
+    const code = await withTimeout(
+      ffmpeg.exec([
+        "-i", "input.webm",
+        "-map", "0:v:0",
+        "-map", "0:a:0",
+        "-c:v", "libx264",
+        "-preset", "ultrafast",
+        "-b:v", "900k", "-maxrate", "1000k", "-bufsize", "2000k",
+        "-pix_fmt", "yuv420p",
+        "-r", String(FPS),
+        "-c:a", "aac",
+        "-b:a", "96k",
+        "-movflags", "+faststart",
+        "-shortest",
+        "output.mp4",
+      ]),
+      8 * 60 * 1000,
+      "A conversão MP4 excedeu 8 minutos e foi interrompida para não deixar a produção travada.",
+    );
     if (code !== 0) throw new Error("O conversor não conseguiu finalizar o MP4 (código " + code + ").");
-    const output = await ffmpeg.readFile("output.mp4");
+    const output = await withTimeout(
+      ffmpeg.readFile("output.mp4"),
+      90000,
+      "O MP4 foi convertido, mas demorou demais para ser recuperado do conversor.",
+    );
     const mp4 = new Blob([output], { type: "video/mp4" });
     if (mp4.size < 64 * 1024) throw new Error("O MP4 final ficou pequeno demais e não passou na validação.");
     const header = new Uint8Array(await mp4.slice(0, 16).arrayBuffer());
