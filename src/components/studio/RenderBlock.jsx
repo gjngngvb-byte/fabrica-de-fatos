@@ -346,7 +346,7 @@ export default function RenderBlock({ video }) {
       const mp4 = await convertWebmToMp4(webm, (progress, detail) => {
         const overall = 90 + Math.round(((progress - 76) / 22) * 7);
         setRender({ status: "renderizando", url: "", error: "", progress: Math.min(97, overall), detail: "FASE 6/6 · " + detail });
-      }, outputResolution, Number(audioResult.audio_duration || 300));
+      }, outputResolution);
 
       currentPhase = "upload e gravação do MP4 no Cloudflare R2";
       setRender({ status: "renderizando", url: "", error: "", progress: 98, detail: "Validando o MP4 e enviando o arquivo original ao Cloudflare R2." });
