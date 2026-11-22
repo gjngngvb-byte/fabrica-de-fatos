@@ -43,7 +43,7 @@ const DEFAULT_STUDIO = {
 };
 
 async function loadStudio(supabase, userId) {
-  const { data, error } = await supabase.from("studios").select("*").eq("created_by", userId).order("created_at", { ascending: true }).limit(1).maybeSingle();
+  const { data, error } = await supabase.from("studios").select("*").eq("created_by", userId).order("updated_at", { ascending: false }).limit(1).maybeSingle();
   if (error) throw error;
   if (data) return data;
   const { data: created, error: createError } = await supabase.from("studios")
