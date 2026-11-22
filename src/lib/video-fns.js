@@ -230,7 +230,7 @@ export const generateVideoKit = createServerFn({ method: "POST" })
     const { data: video, error: lookupError } = await supabase.from("videos").select("id")
       .eq("id", data.videoId).eq("created_by", user.id).single();
     if (lookupError || !video) throw new Error("Vídeo não encontrado.");
-    const { data: result, error } = await supabase.functions.invoke("generate-video-kit", {
+    const { data: result, error } = await supabase.functions.invoke("generate-video-kit-preview", {
       body: { videoId: data.videoId, action: "generate" },
     });
     if (error) throw new Error(await edgeFunctionMessage(error, "Falha ao gerar o roteiro."));
@@ -243,7 +243,7 @@ export const generateNarration = createServerFn({ method: "POST" })
   .validator(z.object({ videoId: z.string().uuid() }))
   .handler(async ({ data, context }) => {
     const auth = await requireContext(context);
-    const { data: result, error } = await auth.supabase.functions.invoke("generate-video-kit", {
+    const { data: result, error } = await auth.supabase.functions.invoke("generate-video-kit-preview", {
       body: { videoId: data.videoId, action: "generate" },
     });
     if (error) throw new Error(error.message || "Falha ao gerar roteiro e narração.");
