@@ -116,18 +116,36 @@ export default function RenderBlock({ video }) {
       }
 
       currentPhase = "união e validação da narração";
-      setRender({ status: "renderizando", url: "", error: "", progress: 69, detail: "FASE 4/6 · Unindo os 15 trechos de voz em uma única narração e montando a linha do tempo." });
-      const audioResult = await finalizeAssets({ data: { videoId: video.id, action: "finalize_audio" } });
-      currentVideo = audioResult?.video;
+      let audioResult;
+      const savedAudioReady = Boolean(currentVideo.audio_url) &&
+        scenes.length === TOTAL_SCENES &&
+        scenes.every((scene) => scene?.audio_path && Number(scene?.audio_duration) > 0);
+      if (savedAudioReady) {
+        const savedDuration = scenes.reduce((sum, scene) => sum + Number(scene.audio_duration || 0), 0);
+        audioResult = { video: { ...currentVideo, scenes }, audio_duration: currentVideo.audio_duration || savedDuration };
+        currentVideo = audioResult.video;
+        setRender({ status: "renderizando", url: "", error: "", progress: 69, detail: "FASE 4/6 · Narração final já salva. Reutilizando o áudio existente." });
+      } else {
+        setRender({ status: "renderizando", url: "", error: "", progress: 69, detail: "FASE 4/6 · Unindo os 15 trechos de voz em uma única narração e montando a linha do tempo." });
+        audioResult = await finalizeAssets({ data: { videoId: video.id, action: "finalize_audio" } });
+        currentVideo = audioResult?.video;
+      }
       if (!currentVideo?.audio_url || currentVideo?.scenes?.length !== TOTAL_SCENES) {
         throw new Error("Não foi possível unir e validar a narração completa.");
       }
       setActiveVideo(currentVideo);
 
       currentPhase = "criação e sincronização das legendas";
-      setRender({ status: "renderizando", url: "", error: "", progress: 72, detail: "FASE 5/6 · Criando legendas a partir das 15 partes do roteiro e sincronizando com a voz." });
-      const captionResult = await finalizeAssets({ data: { videoId: video.id, action: "build_captions" } });
-      currentVideo = captionResult?.video;
+      const savedCaptionsReady = currentVideo.scenes.every((scene) =>
+        Array.isArray(scene.captions) && scene.captions.length > 0
+      );
+      if (savedCaptionsReady) {
+        setRender({ status: "renderizando", url: "", error: "", progress: 72, detail: "FASE 5/6 · Legendas já sincronizadas. Reutilizando os dados existentes." });
+      } else {
+        setRender({ status: "renderizando", url: "", error: "", progress: 72, detail: "FASE 5/6 · Criando legendas a partir das 15 partes do roteiro e sincronizando com a voz." });
+        const captionResult = await finalizeAssets({ data: { videoId: video.id, action: "build_captions" } });
+        currentVideo = captionResult?.video;
+      }
       if (!currentVideo?.audio_url || currentVideo?.scenes?.length !== TOTAL_SCENES ||
           currentVideo.scenes.some((scene) => !Array.isArray(scene.captions) || !scene.captions.length)) {
         throw new Error("As legendas não foram criadas e sincronizadas corretamente.");
