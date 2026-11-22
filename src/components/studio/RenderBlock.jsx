@@ -45,7 +45,9 @@ export default function RenderBlock({ video }) {
   const [busy, setBusy] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [previewScenes, setPreviewScenes] = useState(video.scenes || []);
-  const [calloutSettings, setCalloutSettings] = useState({ intro: true, outro: true });
+  const [calloutSettings, setCalloutSettings] = useState({
+    intro: true, outro: true, introText: "", introTitle: "", outroText: "", channelName: "",
+  });
   const [outputResolution, setOutputResolution] = useState("1080p");
   const [activeVideo, setActiveVideo] = useState(video);
   const started = useRef(false);
@@ -64,7 +66,10 @@ export default function RenderBlock({ video }) {
       setOutputResolution(outputResolution);
       const introCalloutEnabled = studioConfig?.intro_callout_enabled !== false;
       const outroCalloutEnabled = studioConfig?.outro_callout_enabled !== false;
-      setCalloutSettings({ intro: introCalloutEnabled, outro: outroCalloutEnabled });
+      setCalloutSettings({
+        intro: introCalloutEnabled, outro: outroCalloutEnabled,
+        introText: "", introTitle: "", outroText: "", channelName: "",
+      });
       const wordCount = String(currentVideo.script || "").trim().split(/\s+/).filter(Boolean).length;
       const normalizeNarration = (value) => String(value || "").normalize("NFC").replace(/\s+/g, " ").trim();
       const sceneNarration = Array.isArray(currentVideo.scenes)
@@ -109,6 +114,30 @@ export default function RenderBlock({ video }) {
         }
         setActiveVideo(currentVideo);
       }
+
+      const showIntroTitle = studioConfig?.show_title_on_intro !== false;
+      const showChannelName = studioConfig?.show_channel_name_on_outro !== false;
+      let connectedChannelName = "";
+      if (showChannelName) {
+        try {
+          const { data: channelStatus, error: channelStatusError } = await supabase.functions.invoke("tiktok-connect", {
+            body: { action: "status" },
+          });
+          if (!channelStatusError) connectedChannelName = String(channelStatus?.account?.display_name || "").trim();
+          else console.warn("TikTok channel name unavailable:", channelStatusError.message);
+        } catch (channelError) {
+          console.warn("TikTok channel name unavailable:", channelError?.message || channelError);
+        }
+      }
+      const calloutDisplay = {
+        introText: String(studioConfig?.intro_callout || currentVideo.hook || "").trim(),
+        introTitle: showIntroTitle ? String(currentVideo.title || "").trim() : "",
+        outroText: String(studioConfig?.cta || "").trim(),
+        channelName: showChannelName ? connectedChannelName : "",
+      };
+      setCalloutSettings({
+        intro: introCalloutEnabled, outro: outroCalloutEnabled, ...calloutDisplay,
+      });
 
       let scenes = [...(currentVideo.scenes || [])];
       setPreviewScenes(scenes);
@@ -246,7 +275,16 @@ export default function RenderBlock({ video }) {
 
       currentPhase = "renderização do vídeo no navegador";
       setRender({ status: "renderizando", url: "", error: "", progress: 74, detail: "FASE 6/6 · Montando o vídeo vertical com imagens, narração e legendas." });
-      const webm = await recordNarratedSlideshow({ ...currentVideo, output_resolution: outputResolution, intro_callout_enabled: introCalloutEnabled, outro_callout_enabled: outroCalloutEnabled }, (progress, detail) => {
+      const webm = await recordNarratedSlideshow({
+        ...currentVideo,
+        output_resolution: outputResolution,
+        intro_callout_enabled: introCalloutEnabled,
+        outro_callout_enabled: outroCalloutEnabled,
+        intro_callout_text: calloutDisplay.introText,
+        intro_callout_title: calloutDisplay.introTitle,
+        outro_callout_text: calloutDisplay.outroText,
+        outro_channel_name: calloutDisplay.channelName,
+      }, (progress, detail) => {
         const overall = 74 + Math.round((progress / 75) * 16);
         setRender({ status: "renderizando", url: "", error: "", progress: overall, detail: "FASE 6/6 · " + detail });
       });
@@ -366,7 +404,9 @@ export default function RenderBlock({ video }) {
     <div>
       <PhonePlayer scenes={previewScenes} audioUrl={activeVideo?.audio_url || video.audio_url} title={activeVideo?.title || video.title}
         introImageUrl={calloutSettings.intro ? previewScenes[0]?.intro_callout_image_url : ""}
-        outroImageUrl={calloutSettings.outro ? previewScenes[14]?.outro_callout_image_url : ""} />
+        outroImageUrl={calloutSettings.outro ? previewScenes[14]?.outro_callout_image_url : ""}
+        introText={calloutSettings.introText} introTitle={calloutSettings.introTitle}
+        outroText={calloutSettings.outroText} channelName={calloutSettings.channelName} />
       {activeVideo?.title && (
         <div className="mt-3 rounded-xl border border-border bg-card/50 p-3">
           <p className="text-[10px] font-semibold uppercase tracking-wider text-primary">Tema escolhido</p>
