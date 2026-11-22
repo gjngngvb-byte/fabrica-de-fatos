@@ -344,12 +344,17 @@ export default function RenderBlock({ video }) {
       const mp4 = await convertWebmToMp4(webm, (progress, detail) => {
         const overall = 90 + Math.round(((progress - 76) / 22) * 7);
         setRender({ status: "renderizando", url: "", error: "", progress: Math.min(97, overall), detail: "FASE 6/6 · " + detail });
-      }, outputResolution);
+      }, outputResolution, Number(audioResult.audio_duration || 300));
 
       currentPhase = "upload e gravação do MP4 no Supabase";
       setRender({ status: "renderizando", url: "", error: "", progress: 98, detail: "Validando o MP4 e salvando o arquivo final." });
       const { data: authData, error: authError } = await supabase.auth.getUser();
       if (authError || !authData?.user) throw new Error("Sua sessão expirou. Entre novamente para salvar o MP4.");
+      const maxAllowedBytes = 48 * 1024 * 1024;
+      if (mp4.size > maxAllowedBytes) {
+        throw new Error("O MP4 tem " + (mp4.size / 1024 / 1024).toFixed(1) +
+          " MiB e excede a margem segura do armazenamento gratuito (50 MiB). A compressão precisa ser refeita.");
+      }
       const path = authData.user.id + "/" + video.id + ".mp4";
       const { error: uploadError } = await supabase.storage.from("assets").upload(path, mp4, {
         upsert: true, contentType: "video/mp4",
