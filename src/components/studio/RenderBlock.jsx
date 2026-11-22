@@ -43,6 +43,11 @@ export default function RenderBlock({ video }) {
     setRenderState({ ...next, progress: progressRef.current });
   };
   const [busy, setBusy] = useState(false);
+  const [autoResumeEnabled, setAutoResumeEnabled] = useState(true);
+  const autoResumeRef = useRef(true);
+  const retryTimerRef = useRef(null);
+  const retryAttemptRef = useRef(0);
+  const busyRef = useRef(false);
   const [downloading, setDownloading] = useState(false);
   const [previewScenes, setPreviewScenes] = useState(video.scenes || []);
   const [calloutSettings, setCalloutSettings] = useState({
@@ -53,7 +58,12 @@ export default function RenderBlock({ video }) {
   const started = useRef(false);
 
   const build = async () => {
-    if (busy) return;
+    if (busyRef.current) return;
+    if (retryTimerRef.current) {
+      clearTimeout(retryTimerRef.current);
+      retryTimerRef.current = null;
+    }
+    busyRef.current = true;
     let currentPhase = "inicialização";
     setBusy(true);
     progressRef.current = 0;
@@ -61,7 +71,16 @@ export default function RenderBlock({ video }) {
     try {
       currentPhase = "preparação do roteiro";
       let currentVideo = activeVideo || video;
+      const { data: latestVideo, error: latestVideoError } = await supabase.from("videos")
+        .select("*").eq("id", video.id).maybeSingle();
+      if (latestVideoError) throw new Error("Não foi possível recuperar o progresso salvo para retomar: " + latestVideoError.message);
+      if (latestVideo) currentVideo = latestVideo;
+      setActiveVideo(currentVideo);
+      setPreviewScenes(currentVideo.scenes || []);
       const studioConfig = await loadStudio();
+      const resumeEnabled = studioConfig?.auto_resume_enabled !== false;
+      autoResumeRef.current = resumeEnabled;
+      setAutoResumeEnabled(resumeEnabled);
       const outputResolution = studioConfig?.output_resolution === "720p" ? "720p" : "1080p";
       setOutputResolution(outputResolution);
       const introCalloutEnabled = studioConfig?.intro_callout_enabled !== false;
@@ -316,6 +335,11 @@ export default function RenderBlock({ video }) {
         error: "",
       }).eq("id", video.id).eq("created_by", authData.user.id).select("*").single();
       if (updateError) throw new Error("MP4 criado, mas o estado do vídeo não foi atualizado: " + updateError.message);
+      retryAttemptRef.current = 0;
+      if (retryTimerRef.current) {
+        clearTimeout(retryTimerRef.current);
+        retryTimerRef.current = null;
+      }
       setRender({ status: "pronto", url: updated.mp4_url, error: "", progress: 100, detail: "MP4 validado e salvo." });
       toast.success("Vídeo completo de " + Math.round(duration / 60 * 10) / 10 + " minutos pronto!");
       router.invalidate();
@@ -333,9 +357,38 @@ export default function RenderBlock({ video }) {
           }).eq("id", video.id).eq("created_by", authData.user.id);
         }
       } catch {}
-      setRender({ status: "falhou", url: "", error: message, progress: 0, detail: "" });
+      const shouldAutoResume = autoResumeRef.current;
+      let retryDelayMs = 0;
+      if (shouldAutoResume) {
+        retryAttemptRef.current += 1;
+        retryDelayMs = Math.min(15000 * Math.pow(2, Math.min(retryAttemptRef.current - 1, 5)), 300000);
+      }
+      setRender({
+        status: "falhou", url: "", error: message, progress: 0,
+        detail: shouldAutoResume
+          ? "Nova tentativa automática em " + Math.ceil(retryDelayMs / 1000) + " segundos. O progresso salvo será reutilizado."
+          : "",
+      });
       toast.error(message);
+      if (shouldAutoResume) {
+        retryTimerRef.current = setTimeout(async () => {
+          retryTimerRef.current = null;
+          try {
+            const latestSettings = await loadStudio();
+            const enabled = latestSettings?.auto_resume_enabled !== false;
+            autoResumeRef.current = enabled;
+            setAutoResumeEnabled(enabled);
+            if (enabled) {
+              toast.info("Retomando a produção do último ponto concluído…");
+              build();
+            }
+          } catch (resumeError) {
+            console.warn("Não foi possível confirmar a configuração de retomada:", resumeError?.message || resumeError);
+          }
+        }, retryDelayMs);
+      }
     } finally {
+      busyRef.current = false;
       setBusy(false);
     }
   };
@@ -344,7 +397,36 @@ export default function RenderBlock({ video }) {
     if (started.current || initialUrl) return;
     if (video.render_status === "pronto" && video.mp4_url && !legacyShort) return;
     started.current = true;
-    build();
+    let cancelled = false;
+    const startProduction = async () => {
+      if (video.render_status === "falhou" || video.render_status === "renderizando") {
+        try {
+          const studioConfig = await loadStudio();
+          const enabled = studioConfig?.auto_resume_enabled !== false;
+          autoResumeRef.current = enabled;
+          setAutoResumeEnabled(enabled);
+          if (cancelled) return;
+          if (!enabled) {
+            setRender({
+              status: "falhou", url: "", error: video.render_error || "A produção foi interrompida.",
+              progress: 0, detail: "A retomada automática está desativada. Use Retomar produção quando quiser continuar.",
+            });
+            return;
+          }
+        } catch (settingsError) {
+          console.warn("Não foi possível ler a configuração de retomada:", settingsError?.message || settingsError);
+        }
+      }
+      if (!cancelled) build();
+    };
+    startProduction();
+    return () => {
+      cancelled = true;
+      if (retryTimerRef.current) {
+        clearTimeout(retryTimerRef.current);
+        retryTimerRef.current = null;
+      }
+    };
   }, [video.id]);
 
   const downloadMp4 = async () => {
@@ -469,7 +551,7 @@ export default function RenderBlock({ video }) {
             <p className="flex items-start gap-2 rounded-xl border border-destructive/30 bg-destructive/5 p-3 text-[11px] text-destructive">
               <AlertCircle className="mt-0.5 size-4 shrink-0" /> {render.error || "A geração falhou. Tente novamente."}
             </p>
-            <button onClick={build} disabled={busy}
+            <button onClick={() => { retryAttemptRef.current = 0; build(); }} disabled={busy}
               className="flex h-10 w-full items-center justify-center gap-2 rounded-full bg-primary text-xs font-semibold text-primary-foreground disabled:opacity-50">
               <RefreshCw className="size-3.5" /> Retomar produção
             </button>
