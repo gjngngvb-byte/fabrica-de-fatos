@@ -238,7 +238,7 @@ export default function RenderBlock({ video }) {
       const { data: updated, error: updateError } = await supabase.from("videos").update({
         mp4_url: signed.signedUrl,
         render_status: "pronto",
-        render_error: "Longform MP4 | " + Math.round(duration) + "s | 15 imagens + narração contínua + legendas sincronizadas",
+        render_error: "Longform MP4 | " + Math.round(duration) + "s | 17 imagens (1 chamada inicial + 15 cenas + 1 chamada final) + narração contínua + legendas sincronizadas",
         status: "pronto",
         error: "",
       }).eq("id", video.id).eq("created_by", authData.user.id).select("*").single();
@@ -303,7 +303,7 @@ export default function RenderBlock({ video }) {
         <video src={render.url} controls playsInline preload="metadata"
           className="aspect-[9/16] w-full rounded-[2rem] border border-border bg-black object-cover shadow-2xl shadow-black/50" />
         <div className="mt-3 flex items-center gap-2 text-xs text-emerald-500">
-          <CheckCircle2 className="size-4" /> MP4 validado · 15 imagens, narração e legendas sincronizadas
+          <CheckCircle2 className="size-4" /> MP4 validado · 17 imagens, narração e legendas sincronizadas
         </div>
         <div className="mt-4 rounded-xl border border-border bg-card/60 p-3">
           <div className="mb-2 flex items-center justify-between text-[11px]">
@@ -329,7 +329,9 @@ export default function RenderBlock({ video }) {
 
   return (
     <div>
-      <PhonePlayer scenes={previewScenes} audioUrl={activeVideo?.audio_url || video.audio_url} title={activeVideo?.title || video.title} />
+      <PhonePlayer scenes={previewScenes} audioUrl={activeVideo?.audio_url || video.audio_url} title={activeVideo?.title || video.title}
+        introImageUrl={calloutSettings.intro ? previewScenes[0]?.intro_callout_image_url : ""}
+        outroImageUrl={calloutSettings.outro ? previewScenes[14]?.outro_callout_image_url : ""} />
       {activeVideo?.title && (
         <div className="mt-3 rounded-xl border border-border bg-card/50 p-3">
           <p className="text-[10px] font-semibold uppercase tracking-wider text-primary">Tema escolhido</p>
