@@ -166,6 +166,18 @@ export default function RenderBlock({ video }) {
         setPreviewScenes([...scenes]);
         setActiveVideo(currentVideo);
       }
+      if (introCalloutEnabled && !(scenes[0]?.intro_callout_image_url && scenes[0]?.intro_callout_image_path)) {
+        throw new Error("A chamada inicial está ativada, mas sua imagem não foi criada. A montagem foi interrompida para não gerar um vídeo incompleto.");
+      }
+      if (outroCalloutEnabled && !(scenes[14]?.outro_callout_image_url && scenes[14]?.outro_callout_image_path)) {
+        throw new Error("A chamada final está ativada, mas sua imagem não foi criada. A montagem foi interrompida para não gerar um vídeo incompleto.");
+      }
+      if (introCalloutEnabled && outroCalloutEnabled) {
+        const imageCount = scenes.length +
+          Number(Boolean(scenes[0]?.intro_callout_image_url)) +
+          Number(Boolean(scenes[14]?.outro_callout_image_url));
+        if (imageCount !== 17) throw new Error("A produção precisa conter exatamente 17 imagens: 1 chamada inicial + 15 cenas + 1 chamada final. Foram encontradas " + imageCount + ".");
+      }
 
       currentPhase = "geração das 15 narrações";
       // FASE 3: a narração segue o roteiro original, repartido em quinze trechos contínuos.
