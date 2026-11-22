@@ -37,6 +37,8 @@ const DEFAULT_STUDIO = {
   visual_style: "fotografia documental cinematográfica, luz natural dramática, cores ricas, textura de filme 35mm",
   base_hashtags: ["fatoscuriosos", "vocesabia", "curiosidades"],
   cta: "Segue para mais um fato por dia.",
+  intro_callout_enabled: true,
+  outro_callout_enabled: true,
   avoid: "",
 };
 
@@ -217,7 +219,7 @@ export const saveStudio = createServerFn({ method: "POST" })
     voice: z.enum(["river", "honey", "sunny", "storm", "spark"]),
     videos_per_day: z.number().min(1).max(10), duration_target: z.number().min(120).max(300),
     visual_style: z.string().max(400), base_hashtags: z.array(z.string().max(40)).max(10),
-    cta: z.string().max(200), avoid: z.string().max(300),
+    cta: z.string().max(200), intro_callout_enabled: z.boolean().default(true), outro_callout_enabled: z.boolean().default(true), avoid: z.string().max(300),
   }))
   .handler(async ({ data, context }) => {
     const auth = await requireContext(context);
