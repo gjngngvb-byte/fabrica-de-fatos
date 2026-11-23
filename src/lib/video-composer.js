@@ -712,11 +712,45 @@ async function renderMediabunnyMp4(video, onProgress = () => {}, outputResolutio
       format.getSupportedVideoCodecs().filter((codec) => codec === "avc"),
       { width: resolution.width, height: resolution.height },
     );
-    const audioCodec = await getFirstEncodableAudioCodec(
-      format.getSupportedAudioCodecs().filter((codec) => codec === "aac"),
-    );
     if (!videoCodec) throw new Error("O navegador não oferece codificação AVC/H.264 via WebCodecs.");
-    if (!audioCodec) throw new Error("O navegador não oferece codificação AAC via WebCodecs.");
+
+    // AAC support depends on the exact channel count, sample rate and bitrate.
+    // Probe concrete configurations instead of selecting AAC generically and
+    // discovering an unsupported mp4a.40.2 configuration during encoding.
+    const audioProfiles = [
+      { numberOfChannels: 2, sampleRate: 48000, bitrate: 128000 },
+      { numberOfChannels: 2, sampleRate: 44100, bitrate: 128000 },
+      { numberOfChannels: 1, sampleRate: 48000, bitrate: 96000 },
+      { numberOfChannels: 1, sampleRate: 44100, bitrate: 96000 },
+      { numberOfChannels: 1, sampleRate: 24000, bitrate: 64000 },
+    ];
+    let selectedAudioProfile = null;
+    let audioCodec = null;
+    const audioProbeErrors = [];
+    for (const profile of audioProfiles) {
+      try {
+        const quality = new Quality({ bitrate: profile.bitrate });
+        const supportedCodec = await getFirstEncodableAudioCodec(
+          format.getSupportedAudioCodecs().filter((codec) => codec === "aac"),
+          {
+            numberOfChannels: profile.numberOfChannels,
+            sampleRate: profile.sampleRate,
+            quality,
+          },
+        );
+        if (supportedCodec) {
+          selectedAudioProfile = profile;
+          audioCodec = supportedCodec;
+          break;
+        }
+        audioProbeErrors.push(profile.numberOfChannels + "ch/" + profile.sampleRate + "Hz/" + profile.bitrate + "bps: não suportado");
+      } catch (probeError) {
+        audioProbeErrors.push(profile.numberOfChannels + "ch/" + profile.sampleRate + "Hz: " + (probeError?.message || String(probeError)));
+      }
+    }
+    if (!audioCodec || !selectedAudioProfile) {
+      throw new Error("Nenhuma configuração AAC compatível foi encontrada. Tentativas: " + audioProbeErrors.join(" | "));
+    }
 
     videoSource = new CanvasSource(canvas, {
       codec: videoCodec,
@@ -727,7 +761,11 @@ async function renderMediabunnyMp4(video, onProgress = () => {}, outputResolutio
     });
     audioSource = new AudioBufferSource({
       codec: audioCodec,
-      quality: new Quality({ bitrate: 192000 }),
+      quality: new Quality({ bitrate: selectedAudioProfile.bitrate }),
+      transform: {
+        numberOfChannels: selectedAudioProfile.numberOfChannels,
+        sampleRate: selectedAudioProfile.sampleRate,
+      },
     });
     output.addVideoTrack(videoSource, { frameRate: FPS });
     output.addAudioTrack(audioSource);
