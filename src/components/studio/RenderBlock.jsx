@@ -360,8 +360,6 @@ export default function RenderBlock({ video }) {
         });
       }, outputResolution);
 
-      currentPhase = "validação final e upload do MP4";
-
       currentPhase = "upload e gravação do MP4 no Cloudflare R2";
       setRender({ status: "renderizando", url: "", error: "", progress: 98, detail: "Validando o MP4 e enviando o arquivo original ao Cloudflare R2." });
       const duration = Number(audioResult.audio_duration || 0);
@@ -510,6 +508,21 @@ export default function RenderBlock({ video }) {
           </div>
           <p className="mt-2 text-[10px] text-muted-foreground">MP4 salvo · {outputResolution === "720p" ? "720 × 1280 HD" : "1080 × 1920 Full HD"}</p>
         </div>
+        {renderMethods.length > 0 && (
+          <div className="mt-3 rounded-xl border border-border bg-card/60 p-3">
+            <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-foreground">Caminho utilizado na exportação</p>
+            <div className="space-y-2">
+              {renderMethods.map((method, index) => (
+                <div key={method.method} className="flex items-start justify-between gap-3 text-[10px]">
+                  <span className="text-muted-foreground">{index + 1}. {method.method}</span>
+                  <span className={method.status === "success" ? "shrink-0 text-emerald-500" : method.status === "failed" ? "shrink-0 text-destructive" : "shrink-0 text-primary"}>
+                    {method.status === "success" ? "Concluído" : method.status === "failed" ? "Falhou" : "Tentando"}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
         <button onClick={downloadMp4} disabled={downloading}
           className="mt-4 flex h-11 w-full items-center justify-center gap-2 rounded-full bg-primary text-xs font-semibold text-primary-foreground disabled:opacity-50">
           {downloading ? <Loader2 className="size-4 animate-spin" /> : <Download className="size-4" />}
