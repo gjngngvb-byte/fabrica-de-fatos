@@ -326,73 +326,31 @@ function drawFrame(context, scenes, bitmaps, time, callouts = {}, width = WIDTH,
     }
   }
 
-  // Reveal each word progressively inside its timed phrase. Phrase timings
-  // are already placed on the narration timeline by the caption builder.
+  // Legenda tradicional das 15 cenas: preservar o estilo anterior.
+  // As chamadas inicial e final continuam usando o overlay novo separado.
   const caption = (scene.captions || []).find((item) =>
     time >= Number(item.start_seconds) && time < Number(item.end_seconds)
   );
   if (!introActive && !outroActive && caption?.text) {
     context.save();
     const scale = width / 720;
-    const fontFamily = "'Trebuchet MS', 'Arial Rounded MT Bold', sans-serif";
-    context.font = "bold " + Math.round(43 * scale) + "px " + fontFamily;
-    context.textAlign = "left";
+    context.font = "bold " + Math.round(43 * scale) + "px Arial, sans-serif";
+    context.textAlign = "center";
     context.textBaseline = "middle";
-    const allWords = String(caption.text).trim().split(/\\s+/).filter(Boolean);
-    const totalChars = Math.max(1, allWords.reduce((sum, word) => sum + word.length, 0));
-    const phraseDuration = Math.max(0.05, Number(caption.end_seconds) - Number(caption.start_seconds));
-    const phraseProgress = Math.max(0, Math.min(1, (time - Number(caption.start_seconds)) / phraseDuration));
-    let accumulatedChars = 0;
-    let visibleCount = 0;
-    for (const word of allWords) {
-      accumulatedChars += word.length;
-      if (accumulatedChars / totalChars <= phraseProgress || visibleCount === 0) visibleCount++;
-      else break;
-    }
-    const visibleWords = allWords.slice(0, Math.max(1, visibleCount));
-    const maxTextWidth = width - 142 * scale;
-    const lines = [];
-    let line = [];
-    let lineWidth = 0;
-    for (const word of visibleWords) {
-      const wordWidth = context.measureText(word).width;
-      const spaceWidth = context.measureText(" ").width;
-      const nextWidth = lineWidth + (line.length ? spaceWidth : 0) + wordWidth;
-      if (nextWidth > maxTextWidth && line.length) {
-        lines.push(line);
-        line = [word];
-        lineWidth = wordWidth;
-      } else {
-        line.push(word);
-        lineWidth = nextWidth;
-      }
-    }
-    if (line.length) lines.push(line);
-    const lineHeight = 54 * scale;
-    const boxHeight = lines.length * lineHeight + 38 * scale;
+    const lines = wrapText(context, caption.text, width - 104 * scale);
+    const lineHeight = 55 * scale;
+    const boxHeight = lines.length * lineHeight + 42 * scale;
     const boxY = height - 280 * scale - boxHeight / 2;
-    context.fillStyle = "rgba(0,0,0,0.70)";
+    context.fillStyle = "rgba(0,0,0,0.68)";
     drawRoundedRect(context, 38 * scale, boxY, width - 76 * scale, boxHeight, 20 * scale);
     context.fill();
-    // Small golden accent at the top ties the subtitles to the callout design.
-    context.fillStyle = callouts.accentColor || "#FFE36E";
-    drawRoundedRect(context, width / 2 - 26 * scale, boxY + 6 * scale, 52 * scale, 4 * scale, 2 * scale);
-    context.fill();
-    lines.forEach((wordsInLine, lineIndex) => {
-      const widths = wordsInLine.map((word) => context.measureText(word).width);
-      const gap = context.measureText(" ").width;
-      const totalWidth = widths.reduce((sum, value) => sum + value, 0) + gap * (wordsInLine.length - 1);
-      let x = (width - totalWidth) / 2;
-      const y = boxY + 24 * scale + lineHeight * lineIndex + lineHeight / 2;
-      wordsInLine.forEach((word, wordIndex) => {
-        context.lineWidth = 2.5 * scale;
-        context.strokeStyle = "rgba(0,0,0,0.92)";
-        context.strokeText(word, x, y);
-        context.fillStyle = (wordIndex === wordsInLine.length - 1 && lineIndex === lines.length - 1)
-          ? (callouts.accentColor || "#FFE36E") : "#FFFFFF";
-        context.fillText(word, x, y);
-        x += widths[wordIndex] + gap;
-      });
+    context.fillStyle = "#ffffff";
+    lines.forEach((line, lineIndex) => {
+      context.strokeStyle = "rgba(0,0,0,0.9)";
+      context.lineWidth = 3 * scale;
+      const y = boxY + 22 * scale + lineHeight * lineIndex + lineHeight / 2;
+      context.strokeText(line, width / 2, y, width - 110 * scale);
+      context.fillText(line, width / 2, y, width - 110 * scale);
     });
     context.restore();
   }
