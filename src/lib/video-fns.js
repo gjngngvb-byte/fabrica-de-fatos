@@ -308,7 +308,7 @@ export const createRemoteVideoRender = createServerFn({ method: "POST" })
         video.scenes.some((scene) => !scene?.image_url)) {
       throw new Error("O vídeo ainda não possui as 15 imagens e a narração completa para renderização no servidor.");
     }
-    const rendererUrl = String(process.env.VIDEO_RENDERER_URL || "").replace(/\\/$/, "");
+    const rendererUrl = String(process.env.VIDEO_RENDERER_URL || "").replace(/\/$/, "");
     const rendererToken = process.env.VIDEO_RENDERER_TOKEN || "";
     if (!rendererUrl || !rendererToken) {
       throw new Error("Renderização no servidor ainda não configurada neste preview.");
