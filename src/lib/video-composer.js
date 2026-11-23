@@ -624,6 +624,251 @@ export async function recordNarratedSlideshow(video, onProgress = () => {}) {
   }
 }
 
+
+async function renderMediabunnyMp4(video, onProgress = () => {}, outputResolution = "1080p") {
+  if (typeof VideoEncoder === "undefined" || typeof AudioEncoder === "undefined") {
+    throw new Error("Este navegador não oferece WebCodecs para codificação direta.");
+  }
+
+  onProgress(1, "Carregando o motor WebCodecs + Mediabunny.");
+  const media = await withTimeout(
+    import(/* @vite-ignore */ "https://esm.sh/mediabunny@1.66.2?bundle"),
+    45000,
+    "O motor Mediabunny não respondeu em 45 segundos.",
+  );
+  const {
+    Output, Mp4OutputFormat, BufferTarget, CanvasSource, AudioBufferSource,
+    Quality, getFirstEncodableVideoCodec, getFirstEncodableAudioCodec,
+  } = media;
+
+  const scenes = Array.isArray(video.scenes) ? video.scenes : [];
+  if (scenes.length !== 15 || !video.audio_url) {
+    throw new Error("A montagem exige 15 cenas e a narração final.");
+  }
+
+  const images = [];
+  let audioContext = null;
+  let output = null;
+  let videoSource = null;
+  let audioSource = null;
+  try {
+    const callouts = {
+      introTitle: String(video.intro_callout_title || ""),
+      introText: String(video.intro_callout_text || ""),
+      outroText: String(video.outro_callout_text || ""),
+      channelName: String(video.outro_channel_name || ""),
+    };
+    const introEnabled = video.intro_callout_enabled !== false;
+    const outroEnabled = video.outro_callout_enabled !== false;
+    const introUrl = introEnabled ? scenes[0]?.intro_callout_image_url : "";
+    const outroUrl = outroEnabled ? scenes[14]?.outro_callout_image_url : "";
+    if (introEnabled && !introUrl) throw new Error("Imagem da chamada inicial não encontrada.");
+    if (outroEnabled && !outroUrl) throw new Error("Imagem da chamada final não encontrada.");
+
+    const imageCount = scenes.length + Number(Boolean(introUrl)) + Number(Boolean(outroUrl));
+    for (let i = 0; i < scenes.length; i++) {
+      if (!scenes[i]?.image_url) throw new Error("A cena " + (i + 1) + " não possui imagem.");
+      images.push(await loadBitmap(scenes[i].image_url));
+      onProgress(2 + Math.round(((i + 1) / imageCount) * 4), "WebCodecs: carregando imagem " + (i + 1) + "/15.");
+    }
+    if (introUrl) {
+      callouts.introIndex = images.length;
+      images.push(await loadBitmap(introUrl));
+    }
+    if (outroUrl) {
+      callouts.outroIndex = images.length;
+      images.push(await loadBitmap(outroUrl));
+    }
+    callouts.accentColor = pickAccentColor(images[0]);
+
+    const audioResponse = await fetch(video.audio_url, { cache: "no-store" });
+    if (!audioResponse.ok || audioResponse.status !== 200) {
+      throw new Error("Não foi possível carregar a narração completa (HTTP " + audioResponse.status + ").");
+    }
+    const audioBytes = await audioResponse.arrayBuffer();
+    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContextClass) throw new Error("Web Audio não está disponível neste navegador.");
+    audioContext = new AudioContextClass();
+    const audioBuffer = decodePcmWav(audioContext, audioBytes);
+    if (audioBuffer.duration < 120 || audioBuffer.duration > 360) {
+      throw new Error("Duração de narração inválida: " + Math.round(audioBuffer.duration) + " segundos.");
+    }
+
+    const resolution = outputResolution === "720p"
+      ? { width: 720, height: 1280, bitrate: 4_000_000 }
+      : { width: 1080, height: 1920, bitrate: 6_000_000 };
+    const canvas = document.createElement("canvas");
+    canvas.width = resolution.width;
+    canvas.height = resolution.height;
+    const context = canvas.getContext("2d", { alpha: false });
+    if (!context) throw new Error("Não foi possível criar o canvas de exportação.");
+
+    const format = new Mp4OutputFormat({ fastStart: "in-memory" });
+    const target = new BufferTarget();
+    output = new Output({ format, target });
+    const videoCodec = await getFirstEncodableVideoCodec(
+      format.getSupportedVideoCodecs().filter((codec) => codec === "avc"),
+      { width: resolution.width, height: resolution.height },
+    );
+    const audioCodec = await getFirstEncodableAudioCodec(
+      format.getSupportedAudioCodecs().filter((codec) => codec === "aac"),
+    );
+    if (!videoCodec) throw new Error("O navegador não oferece codificação AVC/H.264 via WebCodecs.");
+    if (!audioCodec) throw new Error("O navegador não oferece codificação AAC via WebCodecs.");
+
+    videoSource = new CanvasSource(canvas, {
+      codec: videoCodec,
+      quality: new Quality({ bitrate: resolution.bitrate }),
+      latencyMode: "quality",
+      hardwareAcceleration: "prefer-hardware",
+      keyFrameInterval: 2,
+    });
+    audioSource = new AudioBufferSource({
+      codec: audioCodec,
+      quality: new Quality({ bitrate: 192000 }),
+    });
+    output.addVideoTrack(videoSource, { frameRate: FPS });
+    output.addAudioTrack(audioSource);
+    await output.start();
+
+    const frameCount = Math.ceil(audioBuffer.duration * FPS);
+    onProgress(7, "WebCodecs: iniciando renderização quadro a quadro, sem gravação em tempo real.");
+    for (let frame = 0; frame < frameCount; frame++) {
+      const timestamp = frame / FPS;
+      const frameDuration = Math.min(1 / FPS, audioBuffer.duration - timestamp);
+      drawFrame(
+        context, scenes, images, timestamp, callouts,
+        resolution.width, resolution.height, audioBuffer.duration,
+      );
+      await videoSource.add(timestamp, frameDuration);
+      if (frame % 24 === 0 || frame === frameCount - 1) {
+        onProgress(
+          7 + Math.round(((frame + 1) / frameCount) * 78),
+          "WebCodecs: codificando quadro " + (frame + 1) + "/" + frameCount + ".",
+        );
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      }
+    }
+
+    await audioSource.add(audioBuffer);
+    videoSource.close();
+    audioSource.close();
+    await output.finalize();
+
+    const mp4 = new Blob([target.buffer], { type: "video/mp4" });
+    await validateMp4Blob(mp4, "MP4 WebCodecs");
+    if (mp4.size < 100 * 1024) throw new Error("O MP4 WebCodecs ficou pequeno demais.");
+    onProgress(90, "WebCodecs: conferindo estrutura, duração e faixas do MP4.");
+
+    const { Input, ALL_FORMATS, BlobSource } = media;
+    const input = new Input({ formats: ALL_FORMATS, source: new BlobSource(mp4) });
+    try {
+      const [duration, videoTrack, audioTrack] = await Promise.all([
+        input.computeDuration(),
+        input.getPrimaryVideoTrack(),
+        input.getPrimaryAudioTrack(),
+      ]);
+      if (!videoTrack || !audioTrack) throw new Error("O MP4 não contém as duas faixas de áudio e vídeo.");
+      if (!Number.isFinite(duration) || Math.abs(duration - audioBuffer.duration) > 2) {
+        throw new Error("A duração do MP4 não corresponde à narração (" + duration + "s).");
+      }
+      const [videoDecodable, audioDecodable] = await Promise.all([
+        videoTrack.canDecode(),
+        audioTrack.canDecode(),
+      ]);
+      if (!videoDecodable || !audioDecodable) {
+        throw new Error("O navegador não conseguiu validar a decodificação das faixas do MP4.");
+      }
+    } finally {
+      try { input.dispose(); } catch {}
+    }
+
+    onProgress(100, "WebCodecs: MP4 estruturado e faixas verificadas.");
+    return mp4;
+  } finally {
+    try { videoSource?.close(); } catch {}
+    try { audioSource?.close(); } catch {}
+    try { await output?.cancel(); } catch {}
+    images.forEach((image) => {
+      if (image._composerObjectUrl) {
+        URL.revokeObjectURL(image._composerObjectUrl);
+        image._composerObjectUrl = "";
+      }
+    });
+    if (audioContext && audioContext.state !== "closed") {
+      try { await audioContext.close(); } catch {}
+    }
+  }
+}
+
+export async function renderVideoWithFallback(video, onProgress = () => {}, outputResolution = "1080p") {
+  const failures = [];
+  const report = (progress, detail, method, status, reason = "") => {
+    onProgress(progress, detail, { method, status, reason });
+  };
+
+  report(0, "Método 1/3: WebCodecs + Mediabunny, renderização direta em MP4.", "WebCodecs + Mediabunny", "trying");
+  try {
+    const mp4 = await renderMediabunnyMp4(video, (progress, detail) => {
+      onProgress(progress, detail, { method: "WebCodecs + Mediabunny", status: "trying" });
+    }, outputResolution);
+    report(100, "Método 1/3 concluído: MP4 criado diretamente por WebCodecs.", "WebCodecs + Mediabunny", "success");
+    return mp4;
+  } catch (error) {
+    const reason = error?.message || String(error);
+    failures.push("WebCodecs + Mediabunny: " + reason);
+    report(0, "Método 1/3 falhou. Preparando o próximo caminho. Motivo: " + reason, "WebCodecs + Mediabunny", "failed", reason);
+  }
+
+  report(0, "Método 2/3: MediaRecorder + FFmpeg na resolução selecionada.", "MediaRecorder + FFmpeg", "trying");
+  try {
+    const recording = await recordNarratedSlideshow(
+      { ...video, output_resolution: outputResolution },
+      (progress, detail) => onProgress(
+        Math.min(70, Math.round(progress * 0.7)),
+        "Método 2/3 · " + detail,
+        { method: "MediaRecorder + FFmpeg", status: "trying" },
+      ),
+    );
+    const mp4 = await convertWebmToMp4(recording, (progress, detail) => onProgress(
+      70 + Math.round(Math.max(0, progress - 76) / 22 * 30),
+      "Método 2/3 · " + detail,
+      { method: "MediaRecorder + FFmpeg", status: "trying" },
+    ), outputResolution);
+    report(100, "Método 2/3 concluído: gravação e conversão FFmpeg finalizadas.", "MediaRecorder + FFmpeg", "success");
+    return mp4;
+  } catch (error) {
+    const reason = error?.message || String(error);
+    failures.push("MediaRecorder + FFmpeg: " + reason);
+    report(0, "Método 2/3 falhou. Tentando contingência em 720p. Motivo: " + reason, "MediaRecorder + FFmpeg", "failed", reason);
+  }
+
+  report(0, "Método 3/3: nova gravação em 720p para reduzir uso de memória e processamento.", "MediaRecorder + FFmpeg 720p", "trying");
+  try {
+    const recording = await recordNarratedSlideshow(
+      { ...video, output_resolution: "720p" },
+      (progress, detail) => onProgress(
+        Math.min(70, Math.round(progress * 0.7)),
+        "Método 3/3 · " + detail,
+        { method: "MediaRecorder + FFmpeg 720p", status: "trying" },
+      ),
+    );
+    const mp4 = await convertWebmToMp4(recording, (progress, detail) => onProgress(
+      70 + Math.round(Math.max(0, progress - 76) / 22 * 30),
+      "Método 3/3 · " + detail,
+      { method: "MediaRecorder + FFmpeg 720p", status: "trying" },
+    ), "720p");
+    report(100, "Método 3/3 concluído: MP4 de contingência em 720p.", "MediaRecorder + FFmpeg 720p", "success");
+    return mp4;
+  } catch (error) {
+    const reason = error?.message || String(error);
+    failures.push("MediaRecorder + FFmpeg 720p: " + reason);
+    report(0, "Todos os caminhos de renderização falharam.", "MediaRecorder + FFmpeg 720p", "failed", reason);
+  }
+
+  throw new Error("Nenhum dos 3 caminhos conseguiu concluir o MP4. " + failures.join(" || "));
+}
+
 async function fetchCoreAsset(url, mimeType, timeoutMs = 45000, parentSignal) {
   const controller = new AbortController();
   const abortFromParent = () => controller.abort();
