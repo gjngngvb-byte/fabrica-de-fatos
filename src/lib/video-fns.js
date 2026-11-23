@@ -103,6 +103,28 @@ export const getVideo = createServerFn({ method: "POST" })
     return video;
   });
 
+
+export const getR2VideoDownload = createServerFn({ method: "POST" })
+  .middleware([requireUser])
+  .validator(z.object({ videoId: z.string().uuid(), filename: z.string().min(1).max(100) }))
+  .handler(async ({ data, context }) => {
+    const auth = await requireContext(context);
+    const { data: video, error } = await auth.supabase.from("videos").select("id,mp4_url")
+      .eq("id", data.videoId).eq("created_by", auth.user.id).maybeSingle();
+    if (error || !video || !String(video.mp4_url || "").startsWith("r2://")) {
+      throw new Error("Vídeo não encontrado no armazenamento R2.");
+    }
+    const filename = String(data.filename || "fabrica-de-fatos.mp4")
+      .replace(/[^a-z0-9._-]/gi, "-").slice(0, 100);
+    const { data: result, error: invokeError } = await auth.supabase.functions.invoke("r2-storage-preview", {
+      body: { action: "get_download", key: video.mp4_url.slice(5), filename },
+    });
+    if (invokeError || result?.error || !result?.downloadUrl) {
+      throw new Error(await edgeFunctionMessage(invokeError, result?.error || "Não foi possível preparar o download do MP4."));
+    }
+    return { downloadUrl: result.downloadUrl };
+  });
+
 export const createR2VideoUpload = createServerFn({ method: "POST" })
   .middleware([requireUser])
   .validator(z.object({ videoId: z.string().uuid(), size: z.number().int().min(65536).max(5 * 1024 * 1024 * 1024) }))
