@@ -865,7 +865,7 @@ async function renderMediabunnyMp4(video, onProgress = () => {}, outputResolutio
   }
 }
 
-export async function renderVideoWithFallback(video, onProgress = () => {}, outputResolution = "1080p") {
+export async function renderVideoWithFallback(video, onProgress = () => {}, outputResolution = "1080p", renderOnServer = null) {
   const failures = [];
   const report = (progress, detail, method, status, reason = "") => {
     onProgress(progress, detail, { method, status, reason });
@@ -884,45 +884,65 @@ export async function renderVideoWithFallback(video, onProgress = () => {}, outp
     report(0, "Método 1/3 falhou. Preparando o próximo caminho. Motivo: " + reason, "WebCodecs + Mediabunny", "failed", reason);
   }
 
-  report(0, "Método 2/3: MediaRecorder + FFmpeg na resolução selecionada.", "MediaRecorder + FFmpeg", "trying");
+  if (typeof renderOnServer === "function") {
+    report(0, "Método 2/4: FFmpeg no servidor, sem depender da gravação do navegador.", "FFmpeg no servidor", "trying");
+    try {
+      const mp4 = await renderOnServer(video, (progress, detail) => {
+        onProgress(progress, detail, { method: "FFmpeg no servidor", status: "trying" });
+      });
+      await validateMp4Blob(mp4, "MP4 renderizado no servidor");
+      report(100, "Método 2/4 concluído: MP4 criado pelo FFmpeg no servidor.", "FFmpeg no servidor", "success");
+      return mp4;
+    } catch (error) {
+      const reason = error?.message || String(error);
+      failures.push("FFmpeg no servidor: " + reason);
+      report(0, "Método 2/4 falhou. Retomando os caminhos locais. Motivo: " + reason, "FFmpeg no servidor", "failed", reason);
+    }
+  } else {
+    const reason = "Renderizador remoto não configurado neste ambiente.";
+    failures.push("FFmpeg no servidor: " + reason);
+    report(0, reason, "FFmpeg no servidor", "failed", reason);
+  }
+
+  report(0, "Método 3/4: MediaRecorder + FFmpeg na resolução selecionada.", "MediaRecorder + FFmpeg", "trying");
   try {
     const recording = await recordNarratedSlideshow(
       { ...video, output_resolution: outputResolution },
       (progress, detail) => onProgress(
         Math.min(70, Math.round(progress * 0.7)),
-        "Método 2/3 · " + detail,
+        "Método 3/4 · " + detail,
         { method: "MediaRecorder + FFmpeg", status: "trying" },
       ),
     );
     const mp4 = await convertWebmToMp4(recording, (progress, detail) => onProgress(
       70 + Math.round(Math.max(0, progress - 76) / 22 * 30),
-      "Método 2/3 · " + detail,
+      "Método 3/4 · " + detail,
       { method: "MediaRecorder + FFmpeg", status: "trying" },
     ), outputResolution);
-    report(100, "Método 2/3 concluído: gravação e conversão FFmpeg finalizadas.", "MediaRecorder + FFmpeg", "success");
+    report(100, "Método 3/4 concluído: gravação e conversão FFmpeg finalizadas.", "MediaRecorder + FFmpeg", "success");
     return mp4;
   } catch (error) {
     const reason = error?.message || String(error);
     failures.push("MediaRecorder + FFmpeg: " + reason);
-    report(0, "Método 2/3 falhou. Tentando contingência em 720p. Motivo: " + reason, "MediaRecorder + FFmpeg", "failed", reason);
+    report(0, "Método 3/4 falhou. Tentando contingência em 720p. Motivo: " + reason, "MediaRecorder + FFmpeg", "failed", reason);
   }
 
-  report(0, "Método 3/3: nova gravação em 720p para reduzir uso de memória e processamento.", "MediaRecorder + FFmpeg 720p", "trying");
+  report(0, "Método 4/4: nova gravação em 720p para reduzir uso de memória e processamento.", "MediaRecorder + FFmpeg 720p", "trying");
   try {
     const recording = await recordNarratedSlideshow(
       { ...video, output_resolution: "720p" },
       (progress, detail) => onProgress(
         Math.min(70, Math.round(progress * 0.7)),
-        "Método 3/3 · " + detail,
+        "Método 4/4 · " + detail,
         { method: "MediaRecorder + FFmpeg 720p", status: "trying" },
       ),
     );
     const mp4 = await convertWebmToMp4(recording, (progress, detail) => onProgress(
       70 + Math.round(Math.max(0, progress - 76) / 22 * 30),
-      "Método 3/3 · " + detail,
+      "Método 4/4 · " + detail,
       { method: "MediaRecorder + FFmpeg 720p", status: "trying" },
     ), "720p");
-    report(100, "Método 3/3 concluído: MP4 de contingência em 720p.", "MediaRecorder + FFmpeg 720p", "success");
+    report(100, "Método 4/4 concluído: MP4 de contingência em 720p.", "MediaRecorder + FFmpeg 720p", "success");
     return mp4;
   } catch (error) {
     const reason = error?.message || String(error);
@@ -930,7 +950,7 @@ export async function renderVideoWithFallback(video, onProgress = () => {}, outp
     report(0, "Todos os caminhos de renderização falharam.", "MediaRecorder + FFmpeg 720p", "failed", reason);
   }
 
-  throw new Error("Nenhum dos 3 caminhos conseguiu concluir o MP4. " + failures.join(" || "));
+  throw new Error("Nenhum dos 4 caminhos conseguiu concluir o MP4. " + failures.join(" || "));
 }
 
 async function fetchCoreAsset(url, mimeType, timeoutMs = 45000, parentSignal) {
