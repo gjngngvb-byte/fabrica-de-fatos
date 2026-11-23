@@ -2,7 +2,7 @@ import http from "node:http";
 import { spawn } from "node:child_process";
 import { randomBytes, randomUUID } from "node:crypto";
 import { createWriteStream, createReadStream } from "node:fs";
-import { mkdir, rm, stat } from "node:fs/promises";
+import { mkdir, rm, stat, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
 import { pipeline } from "node:stream/promises";
@@ -70,7 +70,7 @@ async function downloadToFile(urlValue, destination, maxBytes) {
       createWriteStream(destination),
     );
     if (!received) throw new Error("Arquivo de mídia vazio.");
-    return received;
+    return { size: received, contentType: String(response.headers.get("content-type") || "").split(";")[0].toLowerCase() };
   } finally {
     clearTimeout(timeout);
   }
@@ -90,7 +90,7 @@ function assEscape(value) {
   return String(value || "").replace(/\\/g, "\\\\").replace(/{/g, "\\{").replace(/}/g, "\\}").replace(/\n/g, " ");
 }
 
-function makeAss(scenes, width, height, callouts) {
+function makeAss(scenes, width, height, callouts, totalDuration) {
   const lines = [
     "[Script Info]",
     "ScriptType: v4.00+",
@@ -117,11 +117,13 @@ function makeAss(scenes, width, height, callouts) {
   }
   if (callouts?.introText || callouts?.introTitle) {
     const text = [callouts.introTitle, callouts.introText].filter(Boolean).join("\\N");
-    lines.push("Dialogue: 1,0:00:00.00,0:00:01.00,Callout,,0,0,0,," + assEscape(text));
+    const introEnd = Math.max(0.3, Number(callouts.introDuration) || 0.8);
+    lines.push("Dialogue: 1,0:00:00.00," + assTime(introEnd) + ",Callout,,0,0,0,," + assEscape(text));
   }
   if (callouts?.outroText || callouts?.channelName) {
     const text = [callouts.outroText, callouts.channelName ? "no " + callouts.channelName : ""].filter(Boolean).join("\\N");
-    lines.push("Dialogue: 1,0:04:50.00,0:06:00.00,Callout,,0,0,0,," + assEscape(text));
+    const outroStart = Math.max(0, totalDuration - (Number(callouts.outroDuration) || 0.8));
+    lines.push("Dialogue: 1," + assTime(outroStart) + "," + assTime(totalDuration) + ",Callout,,0,0,0,," + assEscape(text));
   }
   return lines.join("\n") + "\n";
 }
@@ -130,8 +132,8 @@ function buildFfmpegArgs(job, inputs, outputPath, subtitlesPath, duration) {
   const width = job.outputResolution === "720p" ? 720 : 1080;
   const height = job.outputResolution === "720p" ? 1280 : 1920;
   const args = ["-y", "-hide_banner", "-loglevel", "error", "-filter_complex_threads", "1"];
-  for (const file of inputs.images) {
-    args.push("-loop", "1", "-framerate", String(FPS), "-t", String(duration), "-i", file);
+  for (let i = 0; i < inputs.images.length; i++) {
+    args.push("-loop", "1", "-framerate", String(FPS), "-t", String(inputs.durations[i] || duration), "-i", inputs.images[i]);
   }
   args.push("-i", inputs.audio);
   const audioIndex = inputs.images.length;
@@ -213,8 +215,18 @@ async function processJob(job) {
     for (let i = 0; i < scenes.length; i++) {
       const scene = scenes[i];
       const imageUrl = safeUrl(scene.image_url);
-      const file = path.join(dir, "scene-" + String(i + 1).padStart(2, "0") + ".img");
-      await downloadToFile(imageUrl, file, MAX_IMAGE_BYTES);
+      const temporaryFile = path.join(dir, "scene-" + String(i + 1).padStart(2, "0") + ".download");
+      const downloaded = await downloadToFile(imageUrl, temporaryFile, MAX_IMAGE_BYTES);
+      const extensionByType = {
+        "image/jpeg": ".jpg", "image/jpg": ".jpg", "image/png": ".png",
+        "image/webp": ".webp", "image/avif": ".avif",
+      };
+      const extension = extensionByType[downloaded.contentType] || path.extname(new URL(imageUrl).pathname).toLowerCase();
+      if (![".jpg", ".jpeg", ".png", ".webp", ".avif"].includes(extension)) {
+        throw new Error("Formato de imagem não reconhecido pelo renderizador: " + (downloaded.contentType || extension || "desconhecido"));
+      }
+      const file = path.join(dir, "scene-" + String(i + 1).padStart(2, "0") + extension);
+      await rename(temporaryFile, file);
       imageFiles.push(file);
       const start = Number(scene.start_seconds) || totalDuration;
       const end = Number(scene.end_seconds);
@@ -232,8 +244,12 @@ async function processJob(job) {
     const subtitlesPath = path.join(dir, "captions.ass");
     const width = job.payload.outputResolution === "720p" ? 720 : 1080;
     const height = job.payload.outputResolution === "720p" ? 1280 : 1920;
-    const ass = makeAss(scenes, width, height, job.payload.callouts || {});
-    await import("node:fs/promises").then(({ writeFile }) => writeFile(subtitlesPath, ass, "utf8"));
+    const ass = makeAss(scenes, width, height, {
+      ...(job.payload.callouts || {}),
+      outroDuration: Number(scenes[14]?.outro_audio_duration) || 0.8,
+      introDuration: Number(scenes[0]?.intro_audio_duration) || 0.8,
+    }, totalDuration);
+    await writeFile(subtitlesPath, ass, "utf8");
     job.status = "rendering";
     job.message = "FFmpeg está compondo as 15 cenas, movimentos, legendas e narração.";
     job.progress = 10;
