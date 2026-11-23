@@ -4,7 +4,7 @@ import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
 import { Download, Film, Loader2, CheckCircle2, AlertCircle, RefreshCw } from "lucide-react";
 import PhonePlayer from "@/components/studio/PhonePlayer";
-import { generateVideoKit, getStudio, createR2VideoUpload, finalizeR2VideoUpload } from "@/lib/video-fns";
+import { generateVideoKit, getStudio, createR2VideoUpload, finalizeR2VideoUpload, createRemoteVideoRender } from "@/lib/video-fns";
 import { generateSceneImage, generateSceneSpeech, finalizeVideoAssets } from "@/lib/render-fns";
 import { renderVideoWithFallback } from "@/lib/video-composer";
 import { supabase } from "@/lib/supabase";
@@ -22,6 +22,7 @@ export default function RenderBlock({ video }) {
   const loadStudio = useServerFn(getStudio);
   const createR2Upload = useServerFn(createR2VideoUpload);
   const finalizeR2Upload = useServerFn(finalizeR2VideoUpload);
+  const createRemoteRender = useServerFn(createRemoteVideoRender);
   const createImage = useServerFn(generateSceneImage);
   const createSpeech = useServerFn(generateSceneSpeech);
   const finalizeAssets = useServerFn(finalizeVideoAssets);
@@ -367,7 +368,50 @@ export default function RenderBlock({ video }) {
           progress: Math.min(97, overall),
           detail: "FASE 6/6 · " + detail,
         });
-      }, outputResolution);
+      }, outputResolution, async (_renderVideo, onRemoteProgress) => {
+        const remoteJob = await createRemoteRender({
+          data: {
+            videoId: video.id,
+            outputResolution,
+            callouts: {
+              introText: calloutDisplay.introText,
+              introTitle: calloutDisplay.introTitle,
+              outroText: calloutDisplay.outroText,
+              channelName: calloutDisplay.channelName,
+            },
+          },
+        });
+        const statusUrl = remoteJob.rendererUrl + remoteJob.statusUrl +
+          "?token=" + encodeURIComponent(remoteJob.accessToken);
+        const startedAt = Date.now();
+        while (Date.now() - startedAt < 20 * 60 * 1000) {
+          await new Promise((resolve) => setTimeout(resolve, 3000));
+          const statusResponse = await fetch(statusUrl, { cache: "no-store" });
+          if (!statusResponse.ok) {
+            throw new Error("Não foi possível consultar o renderizador remoto (HTTP " + statusResponse.status + ").");
+          }
+          const status = await statusResponse.json();
+          onRemoteProgress(
+            Number(status.progress) || 0,
+            "FFmpeg no servidor · " + String(status.message || status.status || "Processando"),
+          );
+          if (status.status === "failed") {
+            throw new Error(status.error || "O FFmpeg remoto não conseguiu concluir o vídeo.");
+          }
+          if (status.status === "completed" && status.downloadUrl) {
+            const fileResponse = await fetch(remoteJob.rendererUrl + status.downloadUrl, { cache: "no-store" });
+            if (!fileResponse.ok) {
+              throw new Error("O MP4 remoto não pôde ser baixado (HTTP " + fileResponse.status + ").");
+            }
+            const resultBlob = await fileResponse.blob();
+            if (!resultBlob.size || resultBlob.type !== "video/mp4") {
+              throw new Error("O servidor não entregou um arquivo MP4 válido.");
+            }
+            return resultBlob;
+          }
+        }
+        throw new Error("A renderização no servidor ultrapassou 20 minutos e foi interrompida na espera do resultado.");
+      });
 
       currentPhase = "upload e gravação do MP4 no Cloudflare R2";
       setRender({ status: "renderizando", url: "", error: "", progress: 98, detail: "Validando o MP4 e enviando o arquivo original ao Cloudflare R2." });
