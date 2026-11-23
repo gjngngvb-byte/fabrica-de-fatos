@@ -46,6 +46,7 @@ export default function RenderBlock({ video }) {
   };
   const [busy, setBusy] = useState(false);
   const [renderMethods, setRenderMethods] = useState([]);
+  const activeRenderMethodRef = useRef("");
   const autoResumeRef = useRef(true);
   const retryTimerRef = useRef(null);
   const retryAttemptRef = useRef(0);
@@ -67,6 +68,7 @@ export default function RenderBlock({ video }) {
     }
     busyRef.current = true;
     setRenderMethods([]);
+    activeRenderMethodRef.current = "";
     let currentPhase = "inicialização";
     setBusy(true);
     progressRef.current = 0;
@@ -341,6 +343,13 @@ export default function RenderBlock({ video }) {
         outro_channel_name: calloutDisplay.channelName,
       }, (progress, detail, event) => {
         if (event?.method && event?.status) {
+          if (event.status === "trying" && activeRenderMethodRef.current !== event.method) {
+            activeRenderMethodRef.current = event.method;
+            progressRef.current = 74;
+          }
+          if (event.status === "success" && event.method.includes("720p")) {
+            setOutputResolution("720p");
+          }
           setRenderMethods((previous) => {
             const index = previous.findIndex((item) => item.method === event.method);
             const nextItem = {
