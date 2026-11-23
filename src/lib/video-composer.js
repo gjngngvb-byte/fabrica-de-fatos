@@ -756,7 +756,7 @@ async function renderMediabunnyMp4(video, onProgress = () => {}, outputResolutio
       codec: videoCodec,
       quality: new Quality({ bitrate: resolution.bitrate }),
       latencyMode: "quality",
-      hardwareAcceleration: "prefer-hardware",
+      hardwareAcceleration: "no-preference",
       keyFrameInterval: 2,
     });
     audioSource = new AudioBufferSource({
@@ -865,6 +865,92 @@ async function renderMediabunnyMp4(video, onProgress = () => {}, outputResolutio
   }
 }
 
+async function validateRenderInputs(video, onProgress = () => {}) {
+  const scenes = Array.isArray(video?.scenes) ? video.scenes : [];
+  if (scenes.length !== 15) {
+    throw new Error("Preparação interrompida: são necessárias 15 cenas completas; foram recebidas " + scenes.length + ".");
+  }
+  if (!video.audio_url) throw new Error("Preparação interrompida: a narração final ainda não possui endereço.");
+
+  const introEnabled = video.intro_callout_enabled !== false;
+  const outroEnabled = video.outro_callout_enabled !== false;
+  const requiredImages = scenes.map((scene, index) => {
+    if (!scene?.image_url || !scene?.image_path) {
+      throw new Error("Preparação interrompida: a imagem da cena " + (index + 1) + " ainda não foi concluída ou sincronizada.");
+    }
+    return { url: scene.image_url, label: "cena " + (index + 1) };
+  });
+  if (introEnabled) {
+    if (!scenes[0]?.intro_callout_image_url || !scenes[0]?.intro_callout_image_path) {
+      throw new Error("Preparação interrompida: a imagem extra da chamada inicial ainda não está pronta.");
+    }
+    requiredImages.push({ url: scenes[0].intro_callout_image_url, label: "chamada inicial" });
+  }
+  if (outroEnabled) {
+    if (!scenes[14]?.outro_callout_image_url || !scenes[14]?.outro_callout_image_path) {
+      throw new Error("Preparação interrompida: a imagem extra da chamada final ainda não está pronta.");
+    }
+    requiredImages.push({ url: scenes[14].outro_callout_image_url, label: "chamada final" });
+  }
+  for (let i = 0; i < scenes.length; i++) {
+    if (!Array.isArray(scenes[i]?.captions) || scenes[i].captions.length === 0) {
+      throw new Error("Preparação interrompida: as legendas da cena " + (i + 1) + " ainda não foram sincronizadas.");
+    }
+    if (!scenes[i]?.audio_path || !(Number(scenes[i]?.audio_duration) > 0)) {
+      throw new Error("Preparação interrompida: o áudio da cena " + (i + 1) + " ainda não foi finalizado.");
+    }
+  }
+
+  const loaded = [];
+  try {
+    onProgress(1, "Preparação final · verificando " + requiredImages.length + " imagens sincronizadas antes de iniciar os renderizadores.");
+    for (let start = 0; start < requiredImages.length; start += 4) {
+      const batch = requiredImages.slice(start, start + 4);
+      const results = await Promise.all(batch.map(async (item) => {
+        try {
+          return await loadBitmap(item.url);
+        } catch (error) {
+          throw new Error("A " + item.label + " ainda não pode ser baixada e decodificada: " + (error?.message || String(error)));
+        }
+      }));
+      loaded.push(...results);
+      onProgress(
+        2 + Math.round((loaded.length / requiredImages.length) * 3),
+        "Preparação final · imagens verificadas " + loaded.length + "/" + requiredImages.length + ".",
+      );
+    }
+
+    onProgress(5, "Preparação final · verificando o arquivo completo da narração e a duração.");
+    const response = await fetch(video.audio_url, {
+      cache: "no-store",
+      headers: { "Cache-Control": "no-cache" },
+    });
+    if (!response.ok || response.status !== 200) {
+      throw new Error("A narração ainda não está disponível integralmente (HTTP " + response.status + ").");
+    }
+    const bytes = await response.arrayBuffer();
+    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContextClass) throw new Error("Este navegador não oferece suporte à validação do áudio.");
+    const audioContext = new AudioContextClass();
+    try {
+      const audioBuffer = decodePcmWav(audioContext, bytes);
+      if (audioBuffer.duration < 120 || audioBuffer.duration > 360) {
+        throw new Error("A narração ainda está incompleta ou possui duração inválida (" + Math.round(audioBuffer.duration) + " segundos).");
+      }
+    } finally {
+      if (audioContext.state !== "closed") await audioContext.close();
+    }
+    onProgress(6, "Preparação concluída · imagens, narrações e legendas estão prontas. Iniciando renderização.");
+  } finally {
+    loaded.forEach((image) => {
+      if (image?._composerObjectUrl) {
+        URL.revokeObjectURL(image._composerObjectUrl);
+        image._composerObjectUrl = "";
+      }
+    });
+  }
+}
+
 export async function renderVideoWithFallback(video, onProgress = () => {}, outputResolution = "1080p", renderOnServer = null) {
   const failures = [];
   const report = (progress, detail, method, status, reason = "") => {
@@ -876,12 +962,12 @@ export async function renderVideoWithFallback(video, onProgress = () => {}, outp
     const mp4 = await renderMediabunnyMp4(video, (progress, detail) => {
       onProgress(progress, detail, { method: "WebCodecs + Mediabunny", status: "trying" });
     }, outputResolution);
-    report(100, "Método 1/3 concluído: MP4 criado diretamente por WebCodecs.", "WebCodecs + Mediabunny", "success");
+    report(100, "Método 1/4 concluído: MP4 criado diretamente por WebCodecs.", "WebCodecs + Mediabunny", "success");
     return mp4;
   } catch (error) {
     const reason = error?.message || String(error);
     failures.push("WebCodecs + Mediabunny: " + reason);
-    report(0, "Método 1/3 falhou. Preparando o próximo caminho. Motivo: " + reason, "WebCodecs + Mediabunny", "failed", reason);
+    report(0, "Método 1/4 falhou. Preparando o próximo caminho. Motivo: " + reason, "WebCodecs + Mediabunny", "failed", reason);
   }
 
   if (typeof renderOnServer === "function") {
