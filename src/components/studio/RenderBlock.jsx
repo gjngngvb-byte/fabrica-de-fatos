@@ -524,18 +524,34 @@ export default function RenderBlock({ video }) {
     if (!render.url) return;
     setDownloading(true);
     try {
-      const response = await fetch(render.url);
+      const response = await fetch(render.url, { cache: "no-store" });
       if (!response.ok) throw new Error("O arquivo MP4 não está acessível. Atualize a página.");
       const blob = await response.blob();
-      if (!blob.size || (blob.type && !blob.type.includes("video"))) throw new Error("O arquivo baixado não passou na verificação.");
+      if (!blob.size) throw new Error("O arquivo recebido está vazio.");
+
+      // Alguns links R2 entregam MP4 como application/octet-stream.
+      // Validar a assinatura ISO-BMFF em vez de confiar somente no MIME type.
+      const header = new Uint8Array(await blob.slice(0, 32).arrayBuffer());
+      const hasFtyp = header.length >= 8 &&
+        String.fromCharCode(...header.slice(4, 8)) === "ftyp";
+      const isVideoMime = /^video\//i.test(blob.type || "");
+      const isGenericBinary = !blob.type || /application\/(octet-stream|binary)/i.test(blob.type);
+      if (!hasFtyp || (!isVideoMime && !isGenericBinary)) {
+        throw new Error("O arquivo recebido não parece ser um MP4 válido. Tente novamente.");
+      }
+
       const objectUrl = URL.createObjectURL(blob);
       const anchor = document.createElement("a");
       anchor.href = objectUrl;
       anchor.download = safeFilename(video.title) + ".mp4";
+      anchor.style.display = "none";
       document.body.appendChild(anchor);
       anchor.click();
       anchor.remove();
-      URL.revokeObjectURL(objectUrl);
+
+      // Não revogar imediatamente: alguns navegadores só iniciam a leitura
+      // do Blob depois que o evento de clique termina.
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
     } catch (error) {
       toast.error(error?.message || "Não foi possível baixar o MP4.");
     } finally {
