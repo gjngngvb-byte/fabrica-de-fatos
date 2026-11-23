@@ -285,3 +285,67 @@ export const saveStudio = createServerFn({ method: "POST" })
     if (error) throw error;
     return updated;
   });
+
+
+export const createRemoteVideoRender = createServerFn({ method: "POST" })
+  .middleware([requireUser])
+  .validator(z.object({
+    videoId: z.string().uuid(),
+    outputResolution: z.enum(["720p", "1080p"]).default("1080p"),
+    callouts: z.object({
+      introText: z.string().max(300).optional().default(""),
+      introTitle: z.string().max(200).optional().default(""),
+      outroText: z.string().max(300).optional().default(""),
+      channelName: z.string().max(100).optional().default(""),
+    }).optional().default({}),
+  }))
+  .handler(async ({ data, context }) => {
+    const auth = await requireContext(context);
+    const { data: video, error } = await auth.supabase.from("videos").select("*")
+      .eq("id", data.videoId).eq("created_by", auth.user.id).maybeSingle();
+    if (error || !video) throw new Error("Vídeo não encontrado ou sem permissão para renderizar.");
+    if (!Array.isArray(video.scenes) || video.scenes.length !== 15 || !video.audio_url ||
+        video.scenes.some((scene) => !scene?.image_url)) {
+      throw new Error("O vídeo ainda não possui as 15 imagens e a narração completa para renderização no servidor.");
+    }
+    const rendererUrl = String(process.env.VIDEO_RENDERER_URL || "").replace(/\\/$/, "");
+    const rendererToken = process.env.VIDEO_RENDERER_TOKEN || "";
+    if (!rendererUrl || !rendererToken) {
+      throw new Error("Renderização no servidor ainda não configurada neste preview.");
+    }
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 60000);
+    try {
+      const response = await fetch(rendererUrl + "/jobs", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          authorization: "Bearer " + rendererToken,
+        },
+        body: JSON.stringify({
+          scenes: video.scenes.map((scene) => ({
+            image_url: scene.image_url,
+            start_seconds: scene.start_seconds,
+            end_seconds: scene.end_seconds,
+            captions: Array.isArray(scene.captions) ? scene.captions : [],
+          })),
+          audio_url: video.audio_url,
+          outputResolution: data.outputResolution,
+          callouts: data.callouts || {},
+        }),
+        signal: controller.signal,
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok || !result.jobId || !result.accessToken) {
+        throw new Error(result.error || "O renderizador remoto recusou a solicitação (HTTP " + response.status + ").");
+      }
+      return { ...result, rendererUrl };
+    } catch (error) {
+      if (error?.name === "AbortError") {
+        throw new Error("O renderizador remoto não respondeu em 60 segundos. O serviço pode estar iniciando após período ocioso.");
+      }
+      throw error;
+    } finally {
+      clearTimeout(timeout);
+    }
+  });
