@@ -638,7 +638,8 @@ async function renderMediabunnyMp4(video, onProgress = () => {}, outputResolutio
   );
   const {
     Output, Mp4OutputFormat, BufferTarget, CanvasSource, AudioBufferSource,
-    Quality, getFirstEncodableVideoCodec, getFirstEncodableAudioCodec,
+    VideoSampleSink, AudioSampleSink, Quality,
+    getFirstEncodableVideoCodec, getFirstEncodableAudioCodec,
   } = media;
 
   const scenes = Array.isArray(video.scenes) ? video.scenes : [];
@@ -784,6 +785,25 @@ async function renderMediabunnyMp4(video, onProgress = () => {}, outputResolutio
       ]);
       if (!videoDecodable || !audioDecodable) {
         throw new Error("O navegador não conseguiu validar a decodificação das faixas do MP4.");
+      }
+      const videoSink = new VideoSampleSink(videoTrack);
+      const audioSink = new AudioSampleSink(audioTrack);
+      const lastCheckTime = Math.max(0, duration - 0.25);
+      const [firstVideo, lastVideo, firstAudio, lastAudio] = await Promise.all([
+        videoSink.getSample(0),
+        videoSink.getSample(lastCheckTime),
+        audioSink.getSample(0),
+        audioSink.getSample(lastCheckTime),
+      ]);
+      try {
+        if (!firstVideo || !lastVideo || !firstAudio || !lastAudio) {
+          throw new Error("O MP4 não conseguiu decodificar amostras do início e do fim das duas faixas.");
+        }
+      } finally {
+        firstVideo?.close?.();
+        lastVideo?.close?.();
+        firstAudio?.close?.();
+        lastAudio?.close?.();
       }
     } finally {
       try { input.dispose(); } catch {}
