@@ -649,6 +649,7 @@ async function renderMediabunnyMp4(video, onProgress = () => {}, outputResolutio
   const images = [];
   let audioContext = null;
   let output = null;
+  let outputFinalized = false;
   let videoSource = null;
   let audioSource = null;
   try {
@@ -754,6 +755,7 @@ async function renderMediabunnyMp4(video, onProgress = () => {}, outputResolutio
     videoSource.close();
     audioSource.close();
     await output.finalize();
+    outputFinalized = true;
 
     const mp4 = new Blob([target.buffer], { type: "video/mp4" });
     await validateMp4Blob(mp4, "MP4 WebCodecs");
@@ -788,7 +790,7 @@ async function renderMediabunnyMp4(video, onProgress = () => {}, outputResolutio
   } finally {
     try { videoSource?.close(); } catch {}
     try { audioSource?.close(); } catch {}
-    try { await output?.cancel(); } catch {}
+    if (!outputFinalized) { try { await output?.cancel(); } catch {} }
     images.forEach((image) => {
       if (image._composerObjectUrl) {
         URL.revokeObjectURL(image._composerObjectUrl);
