@@ -6,7 +6,7 @@ import { Download, Film, Loader2, CheckCircle2, AlertCircle, RefreshCw } from "l
 import PhonePlayer from "@/components/studio/PhonePlayer";
 import { generateVideoKit, getStudio, createR2VideoUpload, finalizeR2VideoUpload } from "@/lib/video-fns";
 import { generateSceneImage, generateSceneSpeech, finalizeVideoAssets } from "@/lib/render-fns";
-import { recordNarratedSlideshow, convertWebmToMp4 } from "@/lib/video-composer";
+import { renderVideoWithFallback } from "@/lib/video-composer";
 import { supabase } from "@/lib/supabase";
 
 function safeFilename(value) {
@@ -45,6 +45,7 @@ export default function RenderBlock({ video }) {
     setRenderState({ ...next, progress: progressRef.current });
   };
   const [busy, setBusy] = useState(false);
+  const [renderMethods, setRenderMethods] = useState([]);
   const autoResumeRef = useRef(true);
   const retryTimerRef = useRef(null);
   const retryAttemptRef = useRef(0);
@@ -65,6 +66,7 @@ export default function RenderBlock({ video }) {
       retryTimerRef.current = null;
     }
     busyRef.current = true;
+    setRenderMethods([]);
     let currentPhase = "inicialização";
     setBusy(true);
     progressRef.current = 0;
@@ -326,9 +328,9 @@ export default function RenderBlock({ video }) {
       setActiveVideo(currentVideo);
       setPreviewScenes(currentVideo.scenes);
 
-      currentPhase = "renderização do vídeo no navegador";
-      setRender({ status: "renderizando", url: "", error: "", progress: 74, detail: "FASE 6/6 · Montando o vídeo vertical com imagens, narração e legendas." });
-      const webm = await recordNarratedSlideshow({
+      currentPhase = "renderização e exportação do vídeo";
+      setRender({ status: "renderizando", url: "", error: "", progress: 74, detail: "FASE 6/6 · Preparando os caminhos alternativos de renderização e exportação MP4." });
+      const mp4 = await renderVideoWithFallback({
         ...currentVideo,
         output_resolution: outputResolution,
         intro_callout_enabled: introCalloutEnabled,
@@ -337,16 +339,28 @@ export default function RenderBlock({ video }) {
         intro_callout_title: calloutDisplay.introTitle,
         outro_callout_text: calloutDisplay.outroText,
         outro_channel_name: calloutDisplay.channelName,
-      }, (progress, detail) => {
-        const overall = 74 + Math.round((progress / 75) * 16);
-        setRender({ status: "renderizando", url: "", error: "", progress: overall, detail: "FASE 6/6 · " + detail });
-      });
-
-      currentPhase = "conversão do vídeo para MP4";
-      const mp4 = await convertWebmToMp4(webm, (progress, detail) => {
-        const overall = 90 + Math.round(((progress - 76) / 22) * 7);
-        setRender({ status: "renderizando", url: "", error: "", progress: Math.min(97, overall), detail: "FASE 6/6 · " + detail });
+      }, (progress, detail, event) => {
+        if (event?.method && event?.status) {
+          setRenderMethods((previous) => {
+            const index = previous.findIndex((item) => item.method === event.method);
+            const nextItem = {
+              method: event.method,
+              status: event.status,
+              reason: event.reason || "",
+            };
+            if (index < 0) return [...previous, nextItem];
+            return previous.map((item, itemIndex) => itemIndex === index ? nextItem : item);
+          });
+        }
+        const overall = 74 + Math.round((Math.max(0, Math.min(100, progress)) / 100) * 23);
+        setRender({
+          status: "renderizando", url: "", error: "",
+          progress: Math.min(97, overall),
+          detail: "FASE 6/6 · " + detail,
+        });
       }, outputResolution);
+
+      currentPhase = "validação final e upload do MP4";
 
       currentPhase = "upload e gravação do MP4 no Cloudflare R2";
       setRender({ status: "renderizando", url: "", error: "", progress: 98, detail: "Validando o MP4 e enviando o arquivo original ao Cloudflare R2." });
@@ -583,6 +597,24 @@ export default function RenderBlock({ video }) {
               <RefreshCw className="size-3.5" /> Retomar produção
             </button>
           </>
+        )}
+        {renderMethods.length > 0 && (
+          <div className="rounded-xl border border-border bg-card/60 p-3">
+            <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-foreground">Caminhos de renderização</p>
+            <div className="space-y-2">
+              {renderMethods.map((method, index) => (
+                <div key={method.method} className="rounded-lg border border-border/70 bg-background/50 p-2">
+                  <div className="flex items-center justify-between gap-2 text-[10px]">
+                    <span className="font-medium text-foreground">{index + 1}. {method.method}</span>
+                    <span className={method.status === "success" ? "text-emerald-500" : method.status === "failed" ? "text-destructive" : "text-primary"}>
+                      {method.status === "success" ? "Concluído" : method.status === "failed" ? "Falhou · próximo caminho" : "Tentando agora"}
+                    </span>
+                  </div>
+                  {method.reason && <p className="mt-1 break-words text-[10px] leading-relaxed text-muted-foreground">{method.reason}</p>}
+                </div>
+              ))}
+            </div>
+          </div>
         )}
         {!busy && render.status !== "falhou" && (
           <p className="text-center font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
