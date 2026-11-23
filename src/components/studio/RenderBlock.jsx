@@ -4,7 +4,7 @@ import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
 import { Download, Film, Loader2, CheckCircle2, AlertCircle, RefreshCw } from "lucide-react";
 import PhonePlayer from "@/components/studio/PhonePlayer";
-import { generateVideoKit, getStudio, createR2VideoUpload, finalizeR2VideoUpload, createRemoteVideoRender } from "@/lib/video-fns";
+import { generateVideoKit, getStudio, createR2VideoUpload, finalizeR2VideoUpload, createRemoteVideoRender, getR2VideoDownload } from "@/lib/video-fns";
 import { generateSceneImage, generateSceneSpeech, finalizeVideoAssets } from "@/lib/render-fns";
 import { renderVideoWithFallback } from "@/lib/video-composer";
 import { supabase } from "@/lib/supabase";
@@ -23,6 +23,7 @@ export default function RenderBlock({ video }) {
   const createR2Upload = useServerFn(createR2VideoUpload);
   const finalizeR2Upload = useServerFn(finalizeR2VideoUpload);
   const createRemoteRender = useServerFn(createRemoteVideoRender);
+  const getR2Download = useServerFn(getR2VideoDownload);
   const createImage = useServerFn(generateSceneImage);
   const createSpeech = useServerFn(generateSceneSpeech);
   const finalizeAssets = useServerFn(finalizeVideoAssets);
@@ -524,34 +525,19 @@ export default function RenderBlock({ video }) {
     if (!render.url) return;
     setDownloading(true);
     try {
-      const response = await fetch(render.url, { cache: "no-store" });
-      if (!response.ok) throw new Error("O arquivo MP4 não está acessível. Atualize a página.");
-      const blob = await response.blob();
-      if (!blob.size) throw new Error("O arquivo recebido está vazio.");
-
-      // Alguns links R2 entregam MP4 como application/octet-stream.
-      // Validar a assinatura ISO-BMFF em vez de confiar somente no MIME type.
-      const header = new Uint8Array(await blob.slice(0, 32).arrayBuffer());
-      const hasFtyp = header.length >= 8 &&
-        String.fromCharCode(...header.slice(4, 8)) === "ftyp";
-      const isVideoMime = /^video\//i.test(blob.type || "");
-      const isGenericBinary = !blob.type || /application\/(octet-stream|binary)/i.test(blob.type);
-      if (!hasFtyp || (!isVideoMime && !isGenericBinary)) {
-        throw new Error("O arquivo recebido não parece ser um MP4 válido. Tente novamente.");
-      }
-
-      const objectUrl = URL.createObjectURL(blob);
+      // Generate a short-lived attachment URL on the server. The browser then
+      // downloads it natively, avoiding cross-origin fetch/CORS restrictions.
+      const filename = safeFilename(video.title) + ".mp4";
+      const result = await getR2Download({ data: { videoId: video.id, filename } });
+      if (!result?.downloadUrl) throw new Error("Não foi possível preparar o download do MP4.");
       const anchor = document.createElement("a");
-      anchor.href = objectUrl;
-      anchor.download = safeFilename(video.title) + ".mp4";
+      anchor.href = result.downloadUrl;
+      anchor.download = filename;
+      anchor.rel = "noopener";
       anchor.style.display = "none";
       document.body.appendChild(anchor);
       anchor.click();
       anchor.remove();
-
-      // Não revogar imediatamente: alguns navegadores só iniciam a leitura
-      // do Blob depois que o evento de clique termina.
-      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
     } catch (error) {
       toast.error(error?.message || "Não foi possível baixar o MP4.");
     } finally {
