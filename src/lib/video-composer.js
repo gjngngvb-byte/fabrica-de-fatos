@@ -732,6 +732,11 @@ async function renderMediabunnyMp4(video, onProgress = () => {}, outputResolutio
     output.addAudioTrack(audioSource);
     await output.start();
 
+    // Feed and close the audio track first so the muxer does not need to
+    // buffer several minutes of video while waiting for its audio packets.
+    await audioSource.add(audioBuffer);
+    audioSource.close();
+
     const frameCount = Math.ceil(audioBuffer.duration * FPS);
     onProgress(7, "WebCodecs: iniciando renderização quadro a quadro, sem gravação em tempo real.");
     for (let frame = 0; frame < frameCount; frame++) {
@@ -751,7 +756,6 @@ async function renderMediabunnyMp4(video, onProgress = () => {}, outputResolutio
       }
     }
 
-    await audioSource.add(audioBuffer);
     videoSource.close();
     audioSource.close();
     await output.finalize();
