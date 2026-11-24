@@ -182,6 +182,7 @@ function MusicLibrary() {
           <p className="mt-1 text-xs text-muted-foreground">ou clique para selecionar vários arquivos</p>
           <p className="mt-2 text-[10px] text-muted-foreground">Áudio: MP3, WAV, M4A, AAC, OGG, FLAC · Informações: TXT, JSON, CSV</p>
           <input ref={fileInput} type="file" multiple accept="audio/*,.mp3,.wav,.m4a,.aac,.ogg,.flac,.txt,.json,.csv"
+            onClick={(e) => e.stopPropagation()}
             onChange={(e) => { addFiles(e.target.files); e.target.value = ""; }}
             className="hidden" />
         </div>
