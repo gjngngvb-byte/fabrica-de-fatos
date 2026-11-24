@@ -1,11 +1,12 @@
 import { Outlet, Link, useRouterState } from "@tanstack/react-router";
-import { Sparkles, Layers, SlidersHorizontal, LogOut } from "lucide-react";
+import { Sparkles, Layers, SlidersHorizontal, LogOut, Music2 } from "lucide-react";
 import { useAuth } from "@/lib/AuthContext";
 import { cn } from "@/lib/utils";
 
 const NAV = [
   { to: "/", label: "Hoje", icon: Sparkles },
   { to: "/videos", label: "Biblioteca", icon: Layers },
+  { to: "/musicas", label: "Músicas", icon: Music2 },
   { to: "/configuracoes", label: "Ajustes", icon: SlidersHorizontal },
 ];
 
