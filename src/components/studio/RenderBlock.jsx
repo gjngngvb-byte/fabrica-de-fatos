@@ -324,8 +324,21 @@ export default function RenderBlock({ video }) {
       setActiveVideo(currentVideo);
       setPreviewScenes(currentVideo.scenes);
 
+      currentPhase = "seleção da trilha musical";
+      setRender({ status: "renderizando", url: "", error: "", progress: 73, detail: "FASE 6/6 · Analisando o tema e a emoção do roteiro para escolher a música." });
+      const { data: musicChoice, error: musicError } = await supabase.functions.invoke("music-library", {
+        body: { action: "recommend", video: {
+          title: currentVideo.title, hook: currentVideo.hook, fact: currentVideo.fact, script: currentVideo.script,
+        } },
+      });
+      if (musicError) {
+        let message = musicError.message || "Falha ao consultar a biblioteca musical.";
+        try { const details = await musicError.context?.clone?.().json(); if (details?.error) message = details.error; } catch {}
+        throw new Error(message);
+      }
+      if (!musicChoice?.url || !musicChoice?.title) throw new Error(musicChoice?.error || "A biblioteca não retornou uma música válida.");
+      setRender({ status: "renderizando", url: "", error: "", progress: 74, detail: "FASE 6/6 · Trilha escolhida: " + musicChoice.title + ". Preparando a mistura com a narração." });
       currentPhase = "renderização do vídeo no navegador";
-      setRender({ status: "renderizando", url: "", error: "", progress: 74, detail: "FASE 6/6 · Montando o vídeo vertical com imagens, narração e legendas." });
       const webm = await recordNarratedSlideshow({
         ...currentVideo,
         output_resolution: outputResolution,
@@ -335,6 +348,8 @@ export default function RenderBlock({ video }) {
         intro_callout_title: calloutDisplay.introTitle,
         outro_callout_text: calloutDisplay.outroText,
         outro_channel_name: calloutDisplay.channelName,
+        music_url: musicChoice.url,
+        music_volume: 0.1,
       }, (progress, detail) => {
         const overall = 74 + Math.round((progress / 75) * 16);
         setRender({ status: "renderizando", url: "", error: "", progress: overall, detail: "FASE 6/6 · " + detail });
@@ -378,7 +393,7 @@ export default function RenderBlock({ video }) {
         retryTimerRef.current = null;
       }
       setRender({ status: "pronto", url: updated.mp4_url, error: "", progress: 100, detail: "MP4 validado e salvo." });
-      toast.success("Vídeo completo de " + Math.round(duration / 60 * 10) / 10 + " minutos pronto!");
+      toast.success("Vídeo pronto com a trilha “" + musicChoice.title + "” · " + Math.round(duration / 60 * 10) / 10 + " minutos.");
       router.invalidate();
     } catch (error) {
       let reason = error?.message || (typeof error === "string" ? error : "Erro sem mensagem retornada pelo navegador.");
@@ -494,7 +509,7 @@ export default function RenderBlock({ video }) {
         <video src={render.url} controls playsInline preload="metadata"
           className="aspect-[9/16] w-full rounded-[2rem] border border-border bg-black object-cover shadow-2xl shadow-black/50" />
         <div className="mt-3 flex items-center gap-2 text-xs text-emerald-500">
-          <CheckCircle2 className="size-4" /> MP4 validado · 17 imagens, narração e legendas sincronizadas
+          <CheckCircle2 className="size-4" /> MP4 validado · 17 imagens, narração, música e legendas sincronizadas
         </div>
         <div className="mt-4 rounded-xl border border-border bg-card/60 p-3">
           <div className="mb-2 flex items-center justify-between text-[11px]">
