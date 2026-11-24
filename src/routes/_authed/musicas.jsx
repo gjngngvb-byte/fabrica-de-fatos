@@ -20,15 +20,14 @@ async function musicAction(body) {
 }
 
 function MusicLibrary() {
-  const [tracks, setTracks] = useState([null, null]);
-  const [metadata, setMetadata] = useState(null);
+  const [selectedFiles, setSelectedFiles] = useState([]);
+  const [dragging, setDragging] = useState(false);
   const [files, setFiles] = useState([]);
   const [connection, setConnection] = useState("checking");
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState("");
   const [error, setError] = useState("");
-  const trackInputs = [useRef(null), useRef(null)];
-  const metadataInput = useRef(null);
+  const fileInput = useRef(null);
 
   const refresh = async () => {
     setConnection("checking");
@@ -64,46 +63,73 @@ function MusicLibrary() {
     return key;
   };
 
+  const classifyFiles = (list) => {
+    const audio = [];
+    const docs = [];
+    const unsupported = [];
+    for (const file of Array.from(list || [])) {
+      const extension = file.name.split(".").pop().toLowerCase();
+      if (file.type.startsWith("audio/") || ["mp3", "wav", "m4a", "aac", "ogg", "flac"].includes(extension)) {
+        audio.push(file);
+      } else if (["txt", "json", "csv"].includes(extension)) {
+        docs.push(file);
+      } else {
+        unsupported.push(file.name);
+      }
+    }
+    return { audio, docs, unsupported };
+  };
+
+  const addFiles = (incoming) => {
+    const next = Array.from(incoming || []);
+    if (!next.length) return;
+    setSelectedFiles((current) => {
+      const existing = new Set(current.map((file) => file.name + "|" + file.size + "|" + file.lastModified));
+      return [...current, ...next.filter((file) => !existing.has(file.name + "|" + file.size + "|" + file.lastModified))];
+    });
+    setError("");
+    setProgress("");
+  };
+
   const handleUpload = async () => {
     setError("");
-    const chosenTracks = tracks.filter(Boolean);
-    if (chosenTracks.length !== 2 || !metadata) {
-      setError("Selecione exatamente duas músicas e um arquivo de informações.");
+    const { audio, docs, unsupported } = classifyFiles(selectedFiles);
+    if (!audio.length || !docs.length) {
+      setError("Adicione pelo menos uma música e um arquivo TXT, JSON ou CSV.");
       return;
     }
-    const invalidTrack = chosenTracks.find((f) => !f.type.startsWith("audio/"));
-    if (invalidTrack) {
-      setError("O arquivo " + invalidTrack.name + " não foi reconhecido como áudio. Use MP3 ou WAV.");
-      return;
-    }
-    const extension = metadata.name.split(".").pop().toLowerCase();
-    if (!["txt", "json", "csv"].includes(extension)) {
-      setError("O arquivo de informações precisa ser TXT, JSON ou CSV.");
+    if (unsupported.length) {
+      setError("Formato não reconhecido: " + unsupported.join(", ") + ". Use áudio, TXT, JSON ou CSV.");
       return;
     }
     setBusy(true);
-    const uploaded = [];
+    let completed = 0;
     try {
-      for (const file of chosenTracks) {
-        uploaded.push(await uploadOne(file, "tracks/", file.type || "audio/mpeg"));
+      for (const file of audio) {
+        setProgress("Enviando música " + (completed + 1) + " de " + selectedFiles.length + ": " + file.name);
+        await uploadOne(file, "tracks/", file.type || "audio/mpeg");
+        completed++;
       }
-      const metadataType = extension === "json" ? "application/json" : extension === "csv" ? "text/csv" : "text/plain";
-      uploaded.push(await uploadOne(metadata, "metadata/", metadataType));
-      setProgress("Conferindo os três arquivos no bucket…");
+      for (const file of docs) {
+        const extension = file.name.split(".").pop().toLowerCase();
+        const contentType = extension === "json" ? "application/json" : extension === "csv" ? "text/csv" : "text/plain";
+        setProgress("Enviando informações " + (completed + 1) + " de " + selectedFiles.length + ": " + file.name);
+        await uploadOne(file, "metadata/", contentType);
+        completed++;
+      }
+      setProgress("Conferindo " + completed + " arquivos no bucket…");
       await refresh();
-      toast.success("As duas músicas e o arquivo foram enviados.");
-      setTracks([null, null]);
-      setMetadata(null);
-      trackInputs.forEach((input) => { if (input.current) input.current.value = ""; });
-      if (metadataInput.current) metadataInput.current.value = "";
-      setProgress("Teste concluído: 3 arquivos enviados.");
+      toast.success(completed + " arquivos enviados e organizados.");
+      setSelectedFiles([]);
+      if (fileInput.current) fileInput.current.value = "";
+      setProgress("Concluído: " + completed + " arquivos enviados.");
     } catch (e) {
       const message = e.message || "Falha no envio.";
       setError(message.includes("Failed to fetch") || message.includes("CORS")
         ? "O navegador bloqueou o envio direto ao R2. Precisamos liberar o CORS do bucket para o domínio do site. Nenhuma alteração foi feita nos vídeos."
         : message);
       setProgress("");
-      toast.error("Não foi possível concluir o envio.");
+      toast.error("Não foi possível concluir todo o lote. Os arquivos já enviados continuam salvos.");
     } finally {
       setBusy(false);
     }
@@ -142,33 +168,56 @@ function MusicLibrary() {
 
       <section className="mt-6 space-y-4 rounded-2xl border border-border/70 bg-card/40 p-5">
         <div>
-          <h2 className="text-sm font-semibold">Lote de teste</h2>
-          <p className="mt-1 text-xs text-muted-foreground">Escolha duas músicas e um arquivo TXT, JSON ou CSV com as informações delas.</p>
+          <h2 className="text-sm font-semibold">Envio em lote</h2>
+          <p className="mt-1 text-xs text-muted-foreground">Arraste todas as músicas e os arquivos TXT, JSON ou CSV de uma vez. A biblioteca identifica e separa cada tipo automaticamente.</p>
         </div>
-        {tracks.map((file, index) => (
-          <div key={index}>
-            <label className="mb-1.5 block text-[11px] uppercase tracking-wider text-muted-foreground">Música {index + 1}</label>
-            <input ref={trackInputs[index]} type="file" accept="audio/mpeg,audio/mp3,audio/wav,audio/x-wav,audio/*"
-              onChange={(e) => setTracks((old) => old.map((v, i) => i === index ? e.target.files?.[0] || null : v))}
-              className="block w-full text-xs text-muted-foreground file:mr-3 file:rounded-full file:border-0 file:bg-secondary file:px-4 file:py-2 file:text-xs file:font-medium file:text-foreground" />
-            {file && <p className="mt-1 text-xs text-foreground">{file.name} <span className="text-muted-foreground">· {formatSize(file.size)}</span></p>}
-          </div>
-        ))}
-        <div>
-          <label className="mb-1.5 block text-[11px] uppercase tracking-wider text-muted-foreground">Arquivo de informações</label>
-          <input ref={metadataInput} type="file" accept=".txt,.json,.csv,text/plain,application/json,text/csv"
-            onChange={(e) => setMetadata(e.target.files?.[0] || null)}
-            className="block w-full text-xs text-muted-foreground file:mr-3 file:rounded-full file:border-0 file:bg-secondary file:px-4 file:py-2 file:text-xs file:font-medium file:text-foreground" />
-          {metadata && <p className="mt-1 flex items-center gap-1.5 text-xs text-foreground"><FileText className="size-3.5" />{metadata.name} <span className="text-muted-foreground">· {formatSize(metadata.size)}</span></p>}
+        <div
+          onDragOver={(e) => { e.preventDefault(); if (!busy) setDragging(true); }}
+          onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) setDragging(false); }}
+          onDrop={(e) => { e.preventDefault(); setDragging(false); if (!busy) addFiles(e.dataTransfer.files); }}
+          onClick={() => { if (!busy) fileInput.current?.click(); }}
+          className={"cursor-pointer rounded-xl border-2 border-dashed p-8 text-center transition-colors " + (dragging ? "border-primary bg-primary/10" : "border-border hover:border-primary/60 hover:bg-secondary/40") + (busy ? " pointer-events-none opacity-60" : "")}>
+          <UploadCloud className="mx-auto size-8 text-primary" />
+          <p className="mt-3 text-sm font-medium">Arraste os arquivos para cá</p>
+          <p className="mt-1 text-xs text-muted-foreground">ou clique para selecionar vários arquivos</p>
+          <p className="mt-2 text-[10px] text-muted-foreground">Áudio: MP3, WAV, M4A, AAC, OGG, FLAC · Informações: TXT, JSON, CSV</p>
+          <input ref={fileInput} type="file" multiple accept="audio/*,.mp3,.wav,.m4a,.aac,.ogg,.flac,.txt,.json,.csv"
+            onChange={(e) => { addFiles(e.target.files); e.target.value = ""; }}
+            className="hidden" />
         </div>
+        {selectedFiles.length > 0 && (() => {
+          const groups = classifyFiles(selectedFiles);
+          return (
+            <div className="space-y-3 rounded-xl border border-border/70 p-4">
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-xs font-semibold">{selectedFiles.length} arquivo(s) selecionado(s)</p>
+                <button type="button" onClick={() => { setSelectedFiles([]); if (fileInput.current) fileInput.current.value = ""; }}
+                  disabled={busy} className="text-xs text-muted-foreground hover:text-foreground disabled:opacity-50">Limpar lista</button>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div>
+                  <p className="mb-1.5 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground"><Music2 className="size-3.5" /> Músicas · {groups.audio.length}</p>
+                  {groups.audio.map((file) => <p key={file.name + file.lastModified} className="truncate py-0.5 text-xs">{file.name}</p>)}
+                  {groups.audio.length === 0 && <p className="text-xs text-muted-foreground">Nenhuma música</p>}
+                </div>
+                <div>
+                  <p className="mb-1.5 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground"><FileText className="size-3.5" /> Informações · {groups.docs.length}</p>
+                  {groups.docs.map((file) => <p key={file.name + file.lastModified} className="truncate py-0.5 text-xs">{file.name}</p>)}
+                  {groups.docs.length === 0 && <p className="text-xs text-muted-foreground">Nenhum TXT, JSON ou CSV</p>}
+                </div>
+              </div>
+              {groups.unsupported.length > 0 && <p className="text-xs text-destructive">Formato não reconhecido: {groups.unsupported.join(", ")}</p>}
+            </div>
+          );
+        })()}
         {error && <p className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-xs text-destructive"><AlertCircle className="mt-0.5 size-4 shrink-0" />{error}</p>}
         {progress && <p className="text-xs text-muted-foreground">{progress}</p>}
-        <button type="button" onClick={handleUpload} disabled={busy || connection !== "connected" || tracks.some((f) => !f) || !metadata}
+        <button type="button" onClick={handleUpload} disabled={busy || connection !== "connected" || selectedFiles.length === 0}
           className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-full bg-primary px-5 text-sm font-semibold text-primary-foreground disabled:cursor-not-allowed disabled:opacity-50">
           {busy ? <Loader2 className="size-4 animate-spin" /> : <UploadCloud className="size-4" />}
-          {busy ? "Enviando arquivos…" : "Enviar 2 músicas + informações"}
+          {busy ? "Enviando lote…" : "Enviar e organizar arquivos"}
         </button>
-        <p className="text-[10px] leading-relaxed text-muted-foreground">O envio usa URLs temporárias assinadas. As chaves secretas do R2 nunca chegam ao navegador.</p>
+        <p className="text-[10px] leading-relaxed text-muted-foreground">Sem limite de quantidade. As músicas vão para tracks/ e os arquivos de informações para metadata/. O envio usa URLs temporárias assinadas, sem expor as chaves do R2.</p>
       </section>
 
       <section className="mt-8">
