@@ -298,6 +298,7 @@ export async function recordNarratedSlideshow(video, onProgress = () => {}) {
   let stream = null;
   let recorder = null;
   let source = null;
+  let musicSource = null;
   let animationId = 0;
   let watchdogId = 0;
   let recordingStarted = false;
@@ -307,6 +308,7 @@ export async function recordNarratedSlideshow(video, onProgress = () => {}) {
     if (animationId) cancelAnimationFrame(animationId);
     if (watchdogId) clearInterval(watchdogId);
     try { if (source) source.stop(); } catch {}
+    try { if (musicSource) musicSource.stop(); } catch {}
     if (recorder && recorder.state !== "inactive") {
       try { recorder.stop(); } catch {}
     }
@@ -371,6 +373,14 @@ export async function recordNarratedSlideshow(video, onProgress = () => {}) {
     if (!AudioContextClass) throw new Error("Este navegador não oferece suporte à reprodução de áudio da montagem.");
     audioContext = new AudioContextClass();
     const audioBuffer = decodePcmWav(audioContext, audioBytes);
+
+    let musicBuffer = null;
+    if (video.music_url) {
+      const musicResponse = await fetch(video.music_url, { cache: "no-store" });
+      if (!musicResponse.ok) throw new Error("Não foi possível carregar a música escolhida (HTTP " + musicResponse.status + ").");
+      musicBuffer = await audioContext.decodeAudioData(await musicResponse.arrayBuffer());
+      if (!musicBuffer.duration) throw new Error("A música escolhida está vazia ou inválida.");
+    }
     if (audioBuffer.duration < 120 || audioBuffer.duration > 360) {
       throw new Error("A narração completa tem " + Math.round(audioBuffer.duration) + " segundos. O limite é de 2 a 6 minutos, incluindo as chamadas.");
     }
@@ -399,6 +409,16 @@ export async function recordNarratedSlideshow(video, onProgress = () => {}) {
     source = audioContext.createBufferSource();
     source.buffer = audioBuffer;
     source.connect(audioDestination);
+
+    if (musicBuffer) {
+      musicSource = audioContext.createBufferSource();
+      musicSource.buffer = musicBuffer;
+      musicSource.loop = true;
+      const musicGain = audioContext.createGain();
+      musicGain.gain.value = Math.max(0, Math.min(0.2, Number(video.music_volume) || 0.1));
+      musicSource.connect(musicGain);
+      musicGain.connect(audioDestination);
+    }
     stream = new MediaStream([
       ...videoStream.getVideoTracks(),
       ...audioDestination.stream.getAudioTracks(),
@@ -445,7 +465,8 @@ export async function recordNarratedSlideshow(video, onProgress = () => {}) {
     recorder.start(1000);
     recordingStarted = true;
     source.start(startAt);
-    onProgress(8, "Gravando vídeo em tempo real e sincronizando a narração. Mantenha esta aba aberta e visível.");
+    if (musicSource) musicSource.start(startAt);
+    onProgress(8, musicSource ? "Gravando vídeo com narração e música de fundo em volume baixo. Mantenha esta aba aberta e visível." : "Gravando vídeo em tempo real e sincronizando a narração. Mantenha esta aba aberta e visível.");
 
     await new Promise((resolve, reject) => {
       let settled = false;
