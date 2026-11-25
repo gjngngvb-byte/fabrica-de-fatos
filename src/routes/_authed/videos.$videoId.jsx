@@ -104,14 +104,13 @@ function VideoDetail() {
           {video.mp4_url && !published && <button onClick={approveAndPublish} disabled={publishing} className="mt-3 flex h-11 w-full items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-foreground disabled:opacity-50">{publishing ? "Publicando nas plataformas..." : "Aprovar e publicar em todas"}</button>}
 
           <div className="mt-5 space-y-2">
-            <button
-              onClick={() => published ? run("publish", () => markPublished({ data: { videoId: video.id, published: false } }), "Vídeo voltou para pronto.") : approveAndPublish()}
-              disabled={!!busy || !video.title}
+            {published && <button
+              onClick={() => run("publish", () => markPublished({ data: { videoId: video.id, published: false } }), "Vídeo voltou para pronto.")}
+              disabled={!!busy}
               className="flex h-10 w-full items-center justify-center gap-2 rounded-full bg-foreground text-xs font-medium text-background transition-opacity hover:opacity-90 disabled:opacity-40"
             >
-              {busy === "publish" ? <Loader2 className="size-3.5 animate-spin" /> : <Check className="size-3.5" />}
-              {published ? "Voltar para pronto" : "Aprovar e publicar"}
-            </button>
+              <Check className="size-3.5" /> Voltar para pronto
+            </button>}
 
             <button
               onClick={() => run("regen", async () => { const next = await createManual(); await router.navigate({ to: "/videos/$videoId", params: { videoId: next.id } }); }, "Nova produção iniciada.")}
