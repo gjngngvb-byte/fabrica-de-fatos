@@ -368,7 +368,7 @@ export default function RenderBlock({ video }) {
       const mp4 = await convertWebmToMp4(webm, (progress, detail) => {
         const overall = 90 + Math.round(((progress - 76) / 22) * 7);
         setRender({ status: "renderizando", url: "", error: "", progress: Math.min(97, overall), detail: "FASE 6/6 · " + detail });
-      }, outputResolution, Number(audioResult.audio_duration || 300));
+      }, outputResolution, durationTargetSeconds);
 
       currentPhase = "upload e gravação do MP4 no Supabase";
       setRender({ status: "renderizando", url: "", error: "", progress: 98, detail: "Validando o MP4 e salvando o arquivo final." });
@@ -387,7 +387,7 @@ export default function RenderBlock({ video }) {
       const { data: signed, error: signedError } = await supabase.storage.from("assets").createSignedUrl(path, 60 * 60 * 24 * 30);
       if (signedError) throw new Error("MP4 salvo, mas não foi possível criar o link: " + signedError.message);
 
-      const duration = Number(audioResult.audio_duration || 0);
+      const duration = durationTargetSeconds;
       const { data: updated, error: updateError } = await supabase.from("videos").update({
         mp4_url: signed.signedUrl,
         render_status: "pronto",
