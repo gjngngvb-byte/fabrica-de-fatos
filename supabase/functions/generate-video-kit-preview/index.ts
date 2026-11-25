@@ -369,7 +369,7 @@ function buildSceneNarration(script: string, visualScenes: any[], count = 15) {
   }
 
   if (units.length < count) {
-    throw new Error("O roteiro tem apenas " + units.length + " frases e divisões naturais. Para criar 15 narrações sem pausas artificiais, gere novamente um roteiro com pelo menos 15 frases ou orações bem pontuadas.");
+    throw new Error("O roteiro tem apenas " + units.length + " frases e divisões naturais. Para criar " + count + " narrações sem pausas artificiais, gere novamente um roteiro com pelo menos " + count + " frases ou orações bem pontuadas.");
   }
 
   // Group adjacent complete sentences into 15 similarly sized narration
@@ -901,8 +901,8 @@ Deno.serve(async (req: Request) => {
       if (!openrouterKey && !groqKey && !geminiKey && !zaiKey && !sensenovaKey && !apinexKey) return json({ error: "Configure ao menos uma chave de API de roteiro nos Secrets do Supabase: OPENROUTER_API_KEY, GROQ_API_KEY, GEMINI_API_KEY, ZAI_API_KEY, SENSENOVA_API_KEY ou APINEX_API_KEY." }, 503);
       const { data: studioRow } = await supabase.from("studios").select("*").eq("created_by", userId).order("updated_at", { ascending: false }).limit(1).maybeSingle();
       const studio = studioRow || {};
-      const targetSeconds = Math.max(120, Math.min(300, Number(studio.duration_target) || 180));
-      const sceneCount = 15;
+      const targetSeconds = Math.max(120, Math.min(300, Math.round(Number(studio.duration_target) || 180)));
+      const sceneCount = Math.max(6, Math.min(15, Math.round(targetSeconds / 20)));
       const { data: historyRows, error: historyError } = await supabase.from("videos").select("title")
         .eq("created_by", userId).not("title", "is", null).order("created_at", { ascending: false }).limit(1000);
       if (historyError) throw new Error("Não foi possível consultar o histórico de temas para evitar repetições: " + historyError.message);
@@ -914,9 +914,9 @@ Deno.serve(async (req: Request) => {
       const configuredIntroCallout = String(studio.intro_callout || "").trim();
       const introCalloutEnabled = studio.intro_callout_enabled !== false;
       const outroCalloutEnabled = studio.outro_callout_enabled !== false;
-      const calculatedTargetWords = Math.round(targetSeconds * 2.2);
-      const minWords = Math.max(280, Math.floor(calculatedTargetWords * 0.9));
-      const maxWords = Math.min(720, Math.ceil(calculatedTargetWords * 1.1));
+      const calculatedTargetWords = Math.round(Math.max(90, targetSeconds - 12) * 2.2);
+      const minWords = Math.max(180, Math.floor(calculatedTargetWords * 0.97));
+      const maxWords = Math.ceil(calculatedTargetWords * 1.03);
       const targetWords = Math.round((minWords + maxWords) / 2);
       const updateScriptProgress = async (message: string) => {
         try {
@@ -935,7 +935,7 @@ Deno.serve(async (req: Request) => {
         "Duração desejada: aproximadamente " + targetSeconds + " segundos (" + Math.round(targetSeconds / 60) + " minutos). Meta de " + targetWords + " palavras; faixa obrigatória de " + minWords + " a " + maxWords + " palavras, considerando narração natural em português brasileiro.",
         "Retorne somente JSON com title, hook, fact, script, caption e hashtags. Não inclua scenes nem prompts de imagem.",
         "O campo script deve conter o roteiro completo, sem resumo e sem cortar introdução ou conclusão. Desenvolva contexto, causas, consequências, detalhes concretos e transições naturais. Não encurte o texto para caber em poucas cenas.",
-        "Escreva com pontuação natural e pelo menos 15 frases completas, usando pontos finais para encerrar ideias. As cenas serão agrupadas a partir dessas frases, sem cortes no meio de uma frase e sem pausas artificiais.",
+        "Escreva com pontuação natural e pelo menos " + sceneCount + " frases completas, usando pontos finais para encerrar ideias. As " + sceneCount + " cenas serão agrupadas a partir dessas frases, sem cortes no meio de uma frase e sem pausas artificiais.",
         introCalloutEnabled ? (configuredIntroCallout ? "Use exatamente este texto como chamada inicial falada e como campo hook: " + configuredIntroCallout + ". Ele deve abrir o script, sem duplicação." : "O campo hook será a chamada inicial falada: inclua esse gancho como primeira frase do script, uma única vez, sem duplicá-lo.") : "A chamada inicial está desativada: não acrescente o campo hook ao início do script.",
         outroCalloutEnabled && cta ? "A chamada final está ativada: termine o script com esta frase exata: " + cta : "A chamada final está desativada: não acrescente a frase de CTA ao script.",
         "Não use instruções para gerar vídeos, não escreva falas de apresentador. A narração será sintetizada separadamente.",
@@ -1037,7 +1037,7 @@ Deno.serve(async (req: Request) => {
             ? "O roteiro está ABAIXO DA FAIXA ACEITA. O texto atual tem " + bestWordCount + " palavras. ACRESCENTE aproximadamente " + delta + " palavras para chegar à meta de " + targetWordCount + ". Não resuma nem recomece do zero: preserve o roteiro atual e amplie suas ideias com contexto, causas, consequências, detalhes concretos e explicações relevantes. Não invente fatos, não repita ideias e não use enchimento. A resposta final DEVE ter entre " + minWords + " e " + maxWords + " palavras, preferencialmente perto de " + targetWordCount + " palavras."
             : "O roteiro está ACIMA DA FAIXA ACEITA. O texto atual tem " + bestWordCount + " palavras. RETIRE aproximadamente " + delta + " palavras para chegar à meta de " + targetWordCount + ". Preserve fatos essenciais, lógica, introdução e conclusão. Corte repetições e trechos secundários, sem eliminar informações importantes. A resposta final DEVE ter entre " + minWords + " e " + maxWords + " palavras, preferencialmente perto de " + targetWordCount + " palavras.",
           "Ajuste o texto inteiro de modo natural. Não invente fatos, não repita ideias, não use frases de enchimento. Mantenha português brasileiro, começo envolvente, desenvolvimento e conclusão.",
-          "Preserve a pontuação natural e mantenha pelo menos 15 frases completas. Não una frases diferentes sem necessidade nem crie cortes artificiais no meio de uma ideia.",
+          "Preserve a pontuação natural e mantenha pelo menos " + sceneCount + " frases completas. Não una frases diferentes sem necessidade nem crie cortes artificiais no meio de uma ideia.",
           "Não duplique a chamada inicial nem a chamada final. Respeite exatamente as configurações de chamadas.",
           "ROTEIRO ATUAL A SER AJUSTADO:",
           bestScript,
@@ -1094,9 +1094,9 @@ Deno.serve(async (req: Request) => {
         throw new Error("O roteiro ficou com " + wordCount + " palavras após 10 tentativas de ajuste. Para " + targetSeconds + " segundos, a média é " + targetWordCount + " palavras (faixa aceita: " + minWords + " a " + maxWords + "). Para completar o ajuste até a média, " + adjustment + " palavras. Gere novamente.");
       }
       const scenes = buildSceneNarration(script, [], sceneCount);
-      if (scenes.length !== sceneCount) throw new Error("A IA precisa dividir o roteiro em exatamente 15 cenas.");
+      if (scenes.length !== sceneCount) throw new Error("A IA precisa dividir o roteiro em exatamente " + sceneCount + " cenas.");
       const fullScript = scenes.map((scene) => scene.narration).join(" ").replace(/\s+/g, " ").trim();
-      if (fullScript !== script.replace(/\s+/g, " ").trim()) throw new Error("A divisão das 15 cenas não corresponde exatamente ao roteiro completo.");
+      if (fullScript !== script.replace(/\s+/g, " ").trim()) throw new Error("A divisão das " + sceneCount + " cenas não corresponde exatamente ao roteiro completo.");
       const updatedData = {
         title: String(draft.title).slice(0, 160),
         hook: String(draft.hook || "").slice(0, 300),
@@ -1251,8 +1251,10 @@ Deno.serve(async (req: Request) => {
 
     if (action === "finalize_audio") {
       const scenes = Array.isArray(video.scenes) ? video.scenes : [];
-      if (scenes.length !== 15 || scenes.some((scene: any) => !scene.image_url || !scene.audio_path || !scene.audio_duration)) {
-        return json({ error: "A produção precisa ter as 15 imagens e as 15 partes da narração antes de juntar o áudio." }, 409);
+      const sceneCount = scenes.length;
+      const lastSceneIndex = sceneCount - 1;
+      if (sceneCount < 6 || scenes.some((scene: any) => !scene.image_url || !scene.audio_path || !scene.audio_duration)) {
+        return json({ error: "A produção precisa ter todas as " + sceneCount + " imagens e partes da narração antes de juntar o áudio." }, 409);
       }
       const pcmParts: Uint8Array[] = [];
       const timedScenes: any[] = [];
@@ -1282,8 +1284,8 @@ Deno.serve(async (req: Request) => {
       }
 
       let outroDuration = 0;
-      if (scenes[14]?.outro_audio_path) {
-        const outroPcm = await downloadPcm(String(scenes[14].outro_audio_path), "chamada final");
+      if (scenes[lastSceneIndex]?.outro_audio_path) {
+        const outroPcm = await downloadPcm(String(scenes[lastSceneIndex].outro_audio_path), "chamada final");
         outroDuration = outroPcm.length / 48000;
         pcmParts.push(outroPcm);
         cursor += outroDuration;
@@ -1292,12 +1294,15 @@ Deno.serve(async (req: Request) => {
       if (timedScenes[0]) {
         timedScenes[0] = { ...timedScenes[0], intro_audio_duration: introDuration, audio_timeline_version: 1 };
       }
-      if (timedScenes[14]) {
-        timedScenes[14] = { ...timedScenes[14], outro_audio_duration: outroDuration };
+      if (timedScenes[lastSceneIndex]) {
+        timedScenes[lastSceneIndex] = { ...timedScenes[lastSceneIndex], outro_audio_duration: outroDuration };
       }
 
-      if (cursor < 120 || cursor > 360) {
-        return json({ error: "A narração completa ficou com " + Math.round(cursor) + " segundos, incluindo as chamadas. O limite é de 2 a 6 minutos.", audio_duration: cursor }, 422);
+      const { data: durationStudio } = await supabase.from("studios").select("duration_target")
+        .eq("created_by", userId).order("updated_at", { ascending: false }).limit(1).maybeSingle();
+      const targetSeconds = Math.max(120, Math.min(300, Math.round(Number(durationStudio?.duration_target) || 180)));
+      if (cursor < targetSeconds * 0.8 || cursor > targetSeconds + 2) {
+        return json({ error: "A narração ficou com " + Math.round(cursor) + " segundos, mas a duração escolhida é " + targetSeconds + " segundos. O roteiro precisa ser recalibrado antes da montagem.", audio_duration: cursor, target_duration: targetSeconds }, 422);
       }
       const totalLength = pcmParts.reduce((sum, part) => sum + part.length, 0);
       const combined = new Uint8Array(totalLength);
@@ -1318,7 +1323,7 @@ Deno.serve(async (req: Request) => {
 
     if (action === "build_captions") {
       const scenes = Array.isArray(video.scenes) ? video.scenes : [];
-      if (scenes.length !== 15 || !video.audio_url || scenes.some((scene: any) => !scene.start_seconds && scene.start_seconds !== 0)) {
+      if (!scenes.length || !video.audio_url || scenes.some((scene: any) => !scene.start_seconds && scene.start_seconds !== 0)) {
         return json({ error: "A linha do tempo da narração ainda não está pronta para criar as legendas." }, 409);
       }
       const timedScenes = scenes.map((scene: any) => {
