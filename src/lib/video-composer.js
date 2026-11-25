@@ -382,15 +382,17 @@ export async function recordNarratedSlideshow(video, onProgress = () => {}) {
       if (!musicBuffer.duration) throw new Error("A música escolhida está vazia ou inválida.");
     }
     const targetDuration = Math.max(120, Math.min(300, Number(video.duration_target) || 180));
-    if (audioBuffer.duration < targetDuration * 0.8 || audioBuffer.duration > targetDuration + 2) {
-      throw new Error("A narração ficou com " + Math.round(audioBuffer.duration) + " segundos, mas a duração escolhida é " + targetDuration + " segundos. A montagem foi interrompida para não entregar um vídeo fora do tempo.");
+    const playbackRate = audioBuffer.duration / targetDuration;
+    if (playbackRate < 0.8 || playbackRate > 1.2) {
+      throw new Error("A narração ficou com " + Math.round(audioBuffer.duration) + " segundos e não pode ser ajustada naturalmente para a duração escolhida de " + targetDuration + " segundos. O roteiro precisa ser refeito.");
     }
+    const renderedDuration = targetDuration;
 
     // Supabase Free accepts files up to 50 MiB. Keep a safety margin for MP4
     // container overhead and AAC audio while preserving the selected resolution.
     const maxUploadBytes = 44 * 1024 * 1024;
     const audioBitrate = 96_000;
-    const targetTotalBitrate = Math.floor((maxUploadBytes * 8 * 0.88) / audioBuffer.duration);
+    const targetTotalBitrate = Math.floor((maxUploadBytes * 8 * 0.88) / renderedDuration);
     const uploadSafeVideoBitrate = Math.max(500_000, targetTotalBitrate - audioBitrate);
     const outputResolution = video.output_resolution === "720p"
       ? { width: 720, height: 1280, videoBitrate: uploadSafeVideoBitrate }
@@ -409,6 +411,7 @@ export async function recordNarratedSlideshow(video, onProgress = () => {}) {
     const audioDestination = audioContext.createMediaStreamDestination();
     source = audioContext.createBufferSource();
     source.buffer = audioBuffer;
+    source.playbackRate.value = playbackRate;
     source.connect(audioDestination);
 
     if (musicBuffer) {
@@ -504,12 +507,13 @@ export async function recordNarratedSlideshow(video, onProgress = () => {}) {
             throw new Error("O relógio de áudio parou de avançar. Mantenha a aba da Fábrica de Fatos em primeiro plano e tente novamente.");
           }
           const elapsed = Math.max(0, now - startAt);
-          drawFrame(context, scenes, images, Math.min(audioBuffer.duration, elapsed), callouts, outputResolution.width, outputResolution.height, audioBuffer.duration);
+          const narrationTime = Math.min(audioBuffer.duration, elapsed * playbackRate);
+          drawFrame(context, scenes, images, narrationTime, callouts, outputResolution.width, outputResolution.height, audioBuffer.duration);
           onProgress(
-            8 + Math.round((elapsed / audioBuffer.duration) * 67),
-            "Sincronizando cenas e legendas · " + Math.min(100, Math.round((elapsed / audioBuffer.duration) * 100)) + "%",
+            8 + Math.round((elapsed / renderedDuration) * 67),
+            "Sincronizando cenas e legendas · " + Math.min(100, Math.round((elapsed / renderedDuration) * 100)) + "%",
           );
-          if (elapsed >= audioBuffer.duration) finish();
+          if (elapsed >= renderedDuration) finish();
           else animationId = requestAnimationFrame(frame);
         } catch (error) {
           finish(error instanceof Error ? error : new Error(String(error)));
