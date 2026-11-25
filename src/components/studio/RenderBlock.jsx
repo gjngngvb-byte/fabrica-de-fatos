@@ -53,6 +53,7 @@ export default function RenderBlock({ video }) {
   });
   const [outputResolution, setOutputResolution] = useState("1080p");
   const [targetSceneCount, setTargetSceneCount] = useState(9);
+  const [durationTargetSeconds, setDurationTargetSeconds] = useState(180);
   const [activeVideo, setActiveVideo] = useState(video);
   const started = useRef(false);
 
@@ -79,8 +80,11 @@ export default function RenderBlock({ video }) {
       const studioConfig = await loadStudio();
       const targetSceneCountLocal = Math.max(6, Math.min(15, Math.round((Number(studioConfig?.duration_target) || 180) / 20)));
       const lastSceneIndex = targetSceneCountLocal - 1;
-      const minScriptWords = Math.max(180, Math.floor(Math.max(90, (Number(studioConfig?.duration_target) || 180) - 12) * 2.2 * 0.97));
+      const durationTarget = Math.max(120, Math.min(300, Number(studioConfig?.duration_target) || 180));
+      const minScriptWords = Math.max(180, Math.floor(Math.max(90, durationTarget - 12) * 2.2 * 0.97));
+      const maxScriptWords = Math.ceil(Math.max(90, durationTarget - 12) * 2.2 * 1.03);
       setTargetSceneCount(targetSceneCountLocal);
+      setDurationTargetSeconds(durationTarget);
       const resumeEnabled = studioConfig?.auto_resume_enabled !== false;
       autoResumeRef.current = resumeEnabled;
       const outputResolution = studioConfig?.output_resolution === "720p" ? "720p" : "1080p";
@@ -98,7 +102,7 @@ export default function RenderBlock({ video }) {
         : "";
       const scenesMatchScript = Boolean(currentVideo.script) &&
         normalizeNarration(sceneNarration) === normalizeNarration(currentVideo.script);
-      if (wordCount < minScriptWords || !Array.isArray(currentVideo.scenes) ||
+      if (wordCount < minScriptWords || wordCount > maxScriptWords || !Array.isArray(currentVideo.scenes) ||
           currentVideo.scenes.length !== targetSceneCountLocal || !scenesMatchScript) {
         setRender({ status: "renderizando", url: "", error: "", progress: 2, detail: "FASE 1/6 · Conferindo a correspondência entre roteiro e cenas e preparando o roteiro correto." });
         let progressPollBusy = false;
@@ -127,7 +131,7 @@ export default function RenderBlock({ video }) {
         }
         currentVideo = scriptResult?.video || scriptResult;
         if (!currentVideo?.script || !Array.isArray(currentVideo.scenes) || currentVideo.scenes.length !== targetSceneCountLocal) {
-          throw new Error("A IA não retornou um roteiro completo dividido em exatamente 15 partes.");
+          throw new Error("A IA não retornou um roteiro completo dividido em exatamente " + targetSceneCountLocal + " partes.");
         }
         const returnedSceneNarration = currentVideo.scenes.map((scene) => normalizeNarration(scene?.narration)).filter(Boolean).join(" ");
         if (normalizeNarration(returnedSceneNarration) !== normalizeNarration(currentVideo.script)) {
@@ -210,7 +214,7 @@ export default function RenderBlock({ video }) {
           currentVideo = result.video;
           scenes = result.video.scenes;
         } else if (result?.scene) {
-          const targetIndex = task.sceneIndex === targetSceneCountLocal ? 0 : 14;
+          const targetIndex = task.sceneIndex === targetSceneCountLocal ? 0 : lastSceneIndex;
           scenes[targetIndex] = result.scene;
         }
         setPreviewScenes([...scenes]);
@@ -616,7 +620,7 @@ export default function RenderBlock({ video }) {
         )}
         {!busy && render.status !== "falhou" && (
           <p className="text-center font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
-            MP4 vertical 9:16 · {outputResolution === "720p" ? "720 × 1280" : "1080 × 1920"} · roteiro de {Math.round((Number(activeVideo?.duration_target) || 180) / 60 * 10) / 10} min + chamadas narradas
+            MP4 vertical 9:16 · {outputResolution === "720p" ? "720 × 1280" : "1080 × 1920"} · roteiro de {Math.round(durationTargetSeconds / 60 * 10) / 10} min + chamadas narradas
           </p>
         )}
       </div>
