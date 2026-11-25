@@ -1,6 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
-const APP_URL=(Deno.env.get("APP_URL")||"https://fabrica-de-fatos.vercel.app").replace(/\\/$/,"");
+const APP_URL=(Deno.env.get("APP_URL")||"https://fabrica-de-fatos.vercel.app").replace(/\/$/,"");
 const fail=(m:string)=>Response.redirect(APP_URL+"/configuracoes?integration_error="+encodeURIComponent(m),302);
 Deno.serve(async(req)=>{
  const url=new URL(req.url),code=url.searchParams.get("code"),state=url.searchParams.get("state"),error=url.searchParams.get("error");
