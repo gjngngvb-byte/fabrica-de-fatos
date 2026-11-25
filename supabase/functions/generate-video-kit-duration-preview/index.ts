@@ -934,17 +934,17 @@ Deno.serve(async (req: Request) => {
         "Crie um roteiro informativo, correto, envolvente e detalhado sobre fatos surpreendentes.",
         "Duração desejada: aproximadamente " + targetSeconds + " segundos (" + Math.round(targetSeconds / 60) + " minutos). Meta de " + targetWords + " palavras; faixa obrigatória de " + minWords + " a " + maxWords + " palavras, considerando narração natural em português brasileiro.",
         "Retorne somente JSON com title, hook, fact, script, caption e hashtags. Não inclua scenes nem prompts de imagem.",
-        "O campo script deve conter o roteiro completo, sem resumo e sem cortar introdução ou conclusão. Desenvolva contexto, causas, consequências, detalhes concretos e transições naturais. Não encurte o texto para caber em poucas cenas.",
+        "O campo script deve conter somente o desenvolvimento narrativo central, sem a chamada inicial (hook) e sem a chamada final (CTA), pois essas duas falas serão gravadas separadamente. Não repita essas chamadas no script. Desenvolva contexto, causas, consequências, detalhes concretos e transições naturais.",
         "Escreva com pontuação natural e pelo menos " + sceneCount + " frases completas, usando pontos finais para encerrar ideias. As " + sceneCount + " cenas serão agrupadas a partir dessas frases, sem cortes no meio de uma frase e sem pausas artificiais.",
-        introCalloutEnabled ? (configuredIntroCallout ? "Use exatamente este texto como chamada inicial falada e como campo hook: " + configuredIntroCallout + ". Ele deve abrir o script, sem duplicação." : "O campo hook será a chamada inicial falada: inclua esse gancho como primeira frase do script, uma única vez, sem duplicá-lo.") : "A chamada inicial está desativada: não acrescente o campo hook ao início do script.",
-        outroCalloutEnabled && cta ? "A chamada final está ativada: termine o script com esta frase exata: " + cta : "A chamada final está desativada: não acrescente a frase de CTA ao script.",
+        introCalloutEnabled ? (configuredIntroCallout ? "Use exatamente este texto como chamada inicial falada e como campo hook: " + configuredIntroCallout + ". NÃO inclua esse texto no campo script." : "O campo hook será a chamada inicial falada. NÃO inclua o hook no campo script.") : "A chamada inicial está desativada: não acrescente o campo hook ao script.",
+        outroCalloutEnabled && cta ? "A chamada final está ativada e será gravada separadamente. NÃO inclua a frase de CTA no campo script." : "A chamada final está desativada: não acrescente a frase de CTA ao script.",
         "Não use instruções para gerar vídeos, não escreva falas de apresentador. A narração será sintetizada separadamente.",
         "Legenda até 140 caracteres. 6 a 8 hashtags sem #.",
         "Nicho: " + (studio.niche || "Fatos surpreendentes") + ". Tom: " + (studio.tone || "curioso, direto e levemente provocador") + ".",
         studio.avoid ? "Evite estes temas: " + studio.avoid : "",
         usedTopicsBlock,
         "Escolha um assunto factual realmente novo e um ângulo diferente de todos os temas listados. Não reutilize entidades, acontecimentos ou fatos centrais já explorados.",
-        outroCalloutEnabled && cta ? "A frase final deve ser exatamente: " + cta : "",
+
       ].filter(Boolean).join("\n");
       let draft = await generateScriptDraft(
         openrouterKey,
