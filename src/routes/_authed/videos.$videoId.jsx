@@ -25,6 +25,7 @@ function VideoDetail() {
   const createManual = useServerFn(createManualVideo);
   const [busy, setBusy] = useState("");
   const [publishing, setPublishing] = useState(false);
+  const [youtubePrivacy, setYoutubePrivacy] = useState("private");
 
   const run = async (key, action, message) => {
     setBusy(key);
@@ -57,7 +58,7 @@ function VideoDetail() {
   const approveAndPublish = async () => {
     setPublishing(true);
     try {
-      const { data, error } = await supabase.functions.invoke("publish-approved", { body: { videoId: video.id } });
+      const { data, error } = await supabase.functions.invoke("publish-approved", { body: { videoId: video.id, privacyStatus: youtubePrivacy } });
       if (error || data?.error) {
         toast.error(data?.error || error?.message || "Não foi possível aprovar e publicar.");
         return;
@@ -101,6 +102,15 @@ function VideoDetail() {
         <div className="lg:sticky lg:top-8 lg:self-start">
           <RenderBlock key={video.id} video={video} />
 
+          {video.mp4_url && !published && <div className="mt-3 rounded-xl border border-border bg-card/40 p-3">
+            <label className="block text-xs font-medium text-foreground" htmlFor="youtube-privacy">Visibilidade no YouTube</label>
+            <select id="youtube-privacy" value={youtubePrivacy} onChange={(e) => setYoutubePrivacy(e.target.value)} className="mt-2 h-10 w-full rounded-lg border border-border bg-background px-3 text-xs text-foreground">
+              <option value="public">Público</option>
+              <option value="unlisted">Não listado</option>
+              <option value="private">Privado</option>
+            </select>
+            <p className="mt-2 text-[11px] text-muted-foreground">A visibilidade escolhida será aplicada ao vídeo enviado ao YouTube.</p>
+          </div>}
           {video.mp4_url && !published && <button onClick={approveAndPublish} disabled={publishing} className="mt-3 flex h-11 w-full items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-foreground disabled:opacity-50">{publishing ? "Publicando nas plataformas..." : "Aprovar e publicar em todas"}</button>}
 
           <div className="mt-5 space-y-2">
