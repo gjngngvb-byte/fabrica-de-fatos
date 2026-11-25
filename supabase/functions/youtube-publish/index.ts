@@ -13,7 +13,8 @@ Deno.serve(async(req)=>{
   const userClient=createClient(Deno.env.get("SUPABASE_URL")!,Deno.env.get("SUPABASE_ANON_KEY")!,{global:{headers:{Authorization:auth}}});
   const {data:{user},error:authError}=await userClient.auth.getUser(token);
   if(authError||!user) return reply({error:"Sessão inválida."},401);
-  const {videoId}=await req.json().catch(()=>({}));
+  const {videoId,privacyStatus="private"}=await req.json().catch(()=>({}));
+  if(!["public","private","unlisted"].includes(privacyStatus)) return reply({error:"Escolha uma visibilidade válida para o YouTube."},400);
   if(typeof videoId!=="string") return reply({error:"Vídeo não identificado."},400);
   const {data:video,error:videoError}=await userClient.from("videos").select("*").eq("id",videoId).eq("created_by",user.id).single();
   if(videoError||!video) return reply({error:"Vídeo não encontrado."},404);
@@ -49,8 +50,8 @@ Deno.serve(async(req)=>{
   const bytes=await media.arrayBuffer();
   if(bytes.byteLength<1||bytes.byteLength>512*1024*1024) return reply({error:"O MP4 excede o limite de 512 MB desta etapa de envio."},413);
   const title=String(video.title||"Fato surpreendente").replace(/[<>]/g,"").slice(0,100);
-  const description=[String(video.caption||""),(video.hashtags||[]).map((h:string)=>"#"+String(h).replace(/^#/,"")).join(" "),"#Shorts"].filter(Boolean).join("\n\n").slice(0,5000);
-  const metadata={snippet:{title,description,categoryId:"27"},status:{privacyStatus:"public",selfDeclaredMadeForKids:false}};
+  const description=[String(video.caption||""),(video.hashtags||[]).map((h:string)=>"#"+String(h).replace(/^#/,"")).join(" ")].filter(Boolean).join("\n\n").slice(0,5000);
+  const metadata={snippet:{title,description,categoryId:"27"},status:{privacyStatus,selfDeclaredMadeForKids:false}};
   const init=await fetch("https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status",{method:"POST",headers:{Authorization:"Bearer "+accessToken,"Content-Type":"application/json; charset=UTF-8","X-Upload-Content-Type":"video/mp4","X-Upload-Content-Length":String(bytes.byteLength)},body:JSON.stringify(metadata)});
   if(!init.ok){const detail=await init.text().catch(()=>"");console.error("[youtube-publish] init",init.status,detail.slice(0,500));return reply({error:"O YouTube recusou a preparação do envio (HTTP "+init.status+")."},502);}
   const uploadUrl=init.headers.get("Location");
@@ -59,7 +60,7 @@ Deno.serve(async(req)=>{
   const result=await readJson(uploaded);
   if(!uploaded.ok||!result.id){console.error("[youtube-publish] upload",uploaded.status,result.error?.message||"no video id");return reply({error:result.error?.message||"O YouTube não concluiu o envio do vídeo."},502);}
   const watchUrl="https://youtu.be/"+result.id;
-  const {error:saveError}=await admin.from("youtube_publications").insert({user_id:user.id,video_id:videoId,youtube_video_id:result.id,status:"uploaded",privacy_status:"public",watch_url:watchUrl});
+  const {error:saveError}=await admin.from("youtube_publications").insert({user_id:user.id,video_id:videoId,youtube_video_id:result.id,status:"uploaded",privacy_status:privacyStatus,watch_url:watchUrl});
   if(saveError){console.error("[youtube-publish] record",saveError.message);return reply({error:"O vídeo foi enviado, mas não foi possível registrar o resultado. Não tente publicar novamente; confira o canal."},500);}
   return reply({success:true,videoId:result.id,watchUrl,message:"Vídeo enviado ao YouTube. O processamento pode levar alguns minutos."});
  } catch(e){console.error("[youtube-publish]",e?.message||e);return reply({error:"Falha interna ao publicar no YouTube."},500);}
