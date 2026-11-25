@@ -1004,27 +1004,32 @@ Deno.serve(async (req: Request) => {
       }
       if (outroCalloutEnabled && cta) script = stripTrailingCallout(script, cta);
       draft.hook = hook;
+      const calloutWordCount = (introCalloutEnabled && hook ? words(hook).length : 0) +
+        (outroCalloutEnabled && cta ? words(cta).length : 0);
       const applyCalloutsToScript = () => {
         if (introCalloutEnabled && hook) {
           script = stripLeadingCallout(script, hook);
-          script = hook.replace(/[\\s.!?…]+$/, "") + ". " + script;
+          script = stripLeadingCallout(script, generatedHook);
+          script = stripLeadingCallout(script, configuredIntroCallout);
         }
-        if (outroCalloutEnabled && cta) {
-          script = stripTrailingCallout(script, cta);
-          script = script.replace(/[\\s.!?…]+$/, "") + ". " + cta;
-        }
+        if (outroCalloutEnabled && cta) script = stripTrailingCallout(script, cta);
+        script = script.trim();
       };
       applyCalloutsToScript();
-      let wordCount = words(script).length;
+      let wordCount = words(script).length + calloutWordCount;
       // Keep the best valid draft seen so a weak revision can never replace a stronger script.
       let bestDraft = { ...draft };
       let bestScript = script;
       let bestWordCount = wordCount;
       const targetWordCount = targetWords;
+      const targetScriptWordCount = Math.max(1, targetWordCount - calloutWordCount);
+      const minScriptWordCount = Math.max(1, minWords - calloutWordCount);
+      const maxScriptWordCount = Math.max(minScriptWordCount, maxWords - calloutWordCount);
       const distanceFromTarget = (count: number) => Math.abs(count - targetWordCount);
       for (let adjustmentAttempt = 0; bestDraft.title && (bestWordCount < minWords || bestWordCount > maxWords) && adjustmentAttempt < 10; adjustmentAttempt++) {
-        const needsExpansion = bestWordCount < minWords;
-        const delta = Math.abs(targetWordCount - bestWordCount);
+        const currentBodyWordCount = words(bestScript).length;
+        const needsExpansion = currentBodyWordCount < targetScriptWordCount;
+        const delta = Math.abs(targetScriptWordCount - currentBodyWordCount);
         const attemptLabel = "Tentativa " + (adjustmentAttempt + 1) + "/10 · " + (needsExpansion ? "AUMENTANDO" : "RESUMINDO") +
           " · roteiro atual: " + bestWordCount + " palavras · faixa: " + minWords + "–" + maxWords + ".";
         await updateScriptProgress(attemptLabel);
@@ -1032,13 +1037,13 @@ Deno.serve(async (req: Request) => {
         console.warn("[SCRIPT_LENGTH] adjusting draft:", bestWordCount, "words; target", minWords, "-", maxWords, "ideal", targetWordCount, "attempt", adjustmentAttempt + 1, "of 10");
         const adjustmentPrompt = [
           prompt,
-          "CONTROLE OBRIGATÓRIO DE EXTENSÃO: o roteiro atual tem " + bestWordCount + " palavras. A META CENTRAL é " + targetWordCount + " palavras, exatamente o ponto médio da faixa aceita de " + minWords + " a " + maxWords + ". Faça o ajuste na direção correta e entregue o roteiro completo.",
+          "CONTROLE OBRIGATÓRIO DE EXTENSÃO: o roteiro central (sem chamada inicial e sem CTA) tem " + currentBodyWordCount + " palavras. A meta do texto central é " + targetScriptWordCount + " palavras, com faixa de " + minScriptWordCount + " a " + maxScriptWordCount + ". As chamadas são gravadas separadamente e não devem aparecer no campo script.",
           needsExpansion
-            ? "O roteiro está ABAIXO DA FAIXA ACEITA. O texto atual tem " + bestWordCount + " palavras. ACRESCENTE aproximadamente " + delta + " palavras para chegar à meta de " + targetWordCount + ". Não resuma nem recomece do zero: preserve o roteiro atual e amplie suas ideias com contexto, causas, consequências, detalhes concretos e explicações relevantes. Não invente fatos, não repita ideias e não use enchimento. A resposta final DEVE ter entre " + minWords + " e " + maxWords + " palavras, preferencialmente perto de " + targetWordCount + " palavras."
-            : "O roteiro está ACIMA DA FAIXA ACEITA. O texto atual tem " + bestWordCount + " palavras. RETIRE aproximadamente " + delta + " palavras para chegar à meta de " + targetWordCount + ". Preserve fatos essenciais, lógica, introdução e conclusão. Corte repetições e trechos secundários, sem eliminar informações importantes. A resposta final DEVE ter entre " + minWords + " e " + maxWords + " palavras, preferencialmente perto de " + targetWordCount + " palavras.",
-          "Ajuste o texto inteiro de modo natural. Não invente fatos, não repita ideias, não use frases de enchimento. Mantenha português brasileiro, começo envolvente, desenvolvimento e conclusão.",
+            ? "O roteiro central está ABAIXO DA FAIXA. Acrescente aproximadamente " + delta + " palavras ao texto central para chegar a " + targetScriptWordCount + ". Preserve o texto atual e amplie com contexto, causas, consequências e detalhes concretos. Não invente fatos nem use enchimento. O campo script deve ter entre " + minScriptWordCount + " e " + maxScriptWordCount + " palavras, sem chamadas."
+            : "O roteiro central está ACIMA DA FAIXA. Retire aproximadamente " + delta + " palavras do texto central para chegar a " + targetScriptWordCount + ". Preserve fatos essenciais, lógica e conclusão factual. O campo script deve ter entre " + minScriptWordCount + " e " + maxScriptWordCount + " palavras, sem chamadas.",
+          "Ajuste somente o desenvolvimento narrativo central. Não inclua hook nem CTA no campo script. Mantenha português brasileiro, começo envolvente, desenvolvimento e conclusão factual.",
           "Preserve a pontuação natural e mantenha pelo menos " + sceneCount + " frases completas. Não una frases diferentes sem necessidade nem crie cortes artificiais no meio de uma ideia.",
-          "Não duplique a chamada inicial nem a chamada final. Respeite exatamente as configurações de chamadas.",
+          "Não inclua a chamada inicial nem a chamada final no campo script. Elas serão acrescentadas uma única vez como áudio separado.",
           "ROTEIRO ATUAL A SER AJUSTADO:",
           bestScript,
           "Retorne JSON completo com title, hook, fact, script, caption e hashtags. O campo script deve conter o roteiro ajustado completo."
@@ -1059,7 +1064,7 @@ Deno.serve(async (req: Request) => {
         script = candidateScript;
         applyCalloutsToScript();
         candidateScript = script;
-        const candidateCount = words(candidateScript).length;
+        const candidateCount = words(candidateScript).length + calloutWordCount;
         console.log("[SCRIPT_LENGTH] revision checked:", candidateCount, "words; required", minWords, "-", maxWords, "attempt", adjustmentAttempt + 1, "of 10");
         await updateScriptProgress("Tentativa " + (adjustmentAttempt + 1) + "/10 concluída · " +
           (needsExpansion ? "AUMENTANDO" : "RESUMINDO") + " · resultado: " + candidateCount +
@@ -1308,7 +1313,7 @@ Deno.serve(async (req: Request) => {
       const combined = new Uint8Array(totalLength);
       let offset = 0;
       for (const part of pcmParts) { combined.set(part, offset); offset += part.length; }
-      const wav = pcmToWav(combined, 24000);
+      const wav = pcmToWav(combined, 48000);
       const audioAsset = await saveAsset(supabase, userId, video.id + "-narration-full.wav", wav, "audio/wav");
       const { data: updated, error } = await supabase.from("videos").update({
         scenes: timedScenes,
