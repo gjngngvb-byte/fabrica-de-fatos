@@ -31,22 +31,20 @@ Deno.serve(async(req)=>{
    const payload=await json(r);
    return {ok:r.ok&&payload.success!==false&&!payload.error,payload};
   };
-  if(yt){
+  const jobs:Promise<{platform:string,status:string,message?:string,url?:string}>[]=[];
+  if(yt) jobs.push((async()=>{
    const existing=await admin.from("youtube_publications").select("youtube_video_id,watch_url").eq("user_id",user.id).eq("video_id",videoId).maybeSingle();
-   if(existing.data) platforms.push({platform:"youtube",status:"success",url:existing.data.watch_url||"https://youtu.be/"+existing.data.youtube_video_id,message:"Este vídeo já foi enviado ao YouTube."});
-   else {
-    const result=await invoke("youtube-publish");
-    platforms.push(result.ok?{platform:"youtube",status:"success",url:result.payload.watchUrl,message:result.payload.message}:{platform:"youtube",status:"failed",message:result.payload.error||"Falha ao publicar no YouTube."});
-   }
-  }
-  if(tt){
+   if(existing.data) return {platform:"youtube",status:"success",url:existing.data.watch_url||"https://youtu.be/"+existing.data.youtube_video_id,message:"Este vídeo já foi enviado ao YouTube."};
+   const result=await invoke("youtube-publish");
+   return result.ok?{platform:"youtube",status:"success",url:result.payload.watchUrl,message:result.payload.message}:{platform:"youtube",status:"failed",message:result.payload.error||"Falha ao publicar no YouTube."};
+  })());
+  if(tt) jobs.push((async()=>{
    const existing=await admin.from("tiktok_publications").select("publish_id,status,share_url").eq("user_id",user.id).eq("video_id",videoId).maybeSingle();
-   if(existing.data) platforms.push({platform:"tiktok",status:"success",url:existing.data.share_url||undefined,message:"Este vídeo já foi enviado ao TikTok e está em processamento."});
-   else {
-    const result=await invoke("tiktok-publish");
-    platforms.push(result.ok?{platform:"tiktok",status:"success",message:result.payload.message||"Enviado ao TikTok."}:{platform:"tiktok",status:"failed",message:result.payload.error||"Falha ao publicar no TikTok."});
-   }
-  }
+   if(existing.data) return {platform:"tiktok",status:"success",url:existing.data.share_url||undefined,message:"Este vídeo já foi enviado ao TikTok e está em processamento."};
+   const result=await invoke("tiktok-publish");
+   return result.ok?{platform:"tiktok",status:"success",message:result.payload.message||"Enviado ao TikTok."}:{platform:"tiktok",status:"failed",message:result.payload.error||"Falha ao publicar no TikTok."};
+  })());
+  platforms.push(...await Promise.all(jobs));
   const allOk=platforms.every(p=>p.status==="success");
   return reply({success:allOk,partial:!allOk,platforms,message:allOk?"Vídeo aprovado e enviado para todas as plataformas conectadas.":"Algumas plataformas não concluíram a publicação. As que deram certo não serão enviadas novamente."});
  } catch(e){console.error("[publish-approved]",e?.message||e);return reply({error:"Não foi possível concluir a aprovação e publicação."},500);}
