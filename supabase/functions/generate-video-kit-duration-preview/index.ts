@@ -1301,7 +1301,7 @@ Deno.serve(async (req: Request) => {
       const { data: durationStudio } = await supabase.from("studios").select("duration_target")
         .eq("created_by", userId).order("updated_at", { ascending: false }).limit(1).maybeSingle();
       const targetSeconds = Math.max(120, Math.min(300, Math.round(Number(durationStudio?.duration_target) || 180)));
-      if (cursor < targetSeconds * 0.8 || cursor > targetSeconds + 2) {
+      if (cursor < targetSeconds * 0.8 || cursor > targetSeconds * 1.2) {
         return json({ error: "A narração ficou com " + Math.round(cursor) + " segundos, mas a duração escolhida é " + targetSeconds + " segundos. O roteiro precisa ser recalibrado antes da montagem.", audio_duration: cursor, target_duration: targetSeconds }, 422);
       }
       const totalLength = pcmParts.reduce((sum, part) => sum + part.length, 0);
