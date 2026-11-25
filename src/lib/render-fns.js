@@ -32,7 +32,7 @@ async function runAssetAction({ data, context }, action, fallback) {
   const { data: owned, error: lookupError } = await supabase.from("videos").select("id")
     .eq("id", data.videoId).eq("created_by", user.id).maybeSingle();
   if (lookupError || !owned) throw new Error("Vídeo não encontrado.");
-  const { data: result, error } = await supabase.functions.invoke("generate-video-kit-preview", {
+  const { data: result, error } = await supabase.functions.invoke("generate-video-kit-duration-preview", {
     body: { videoId: data.videoId, action, sceneIndex: data.sceneIndex, narrationText: data.narrationText },
   });
   if (error) throw new Error(await invokeMessage(error, fallback));
@@ -64,7 +64,7 @@ export const finalizeVideoAssets = createServerFn({ method: "POST" })
     const { data: owned, error: lookupError } = await supabase.from("videos").select("id")
       .eq("id", data.videoId).eq("created_by", user.id).maybeSingle();
     if (lookupError || !owned) throw new Error("Vídeo não encontrado.");
-    const { data: result, error } = await supabase.functions.invoke("generate-video-kit-preview", {
+    const { data: result, error } = await supabase.functions.invoke("generate-video-kit-duration-preview", {
       body: { videoId: data.videoId, action: data.action },
     });
     if (error) throw new Error(await invokeMessage(error, "Falha ao sincronizar a narração."));
