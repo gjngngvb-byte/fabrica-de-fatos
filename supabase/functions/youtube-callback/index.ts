@@ -23,7 +23,7 @@ Deno.serve(async(req)=>{
   const {data:existing}=await admin.from("youtube_connections").select("refresh_token").eq("user_id",oauth.user_id).maybeSingle();
   const refreshToken=tokenData.refresh_token||existing?.refresh_token;
   if(!refreshToken) return fail("O Google não forneceu um token de renovação. Desconecte o acesso antigo da Fábrica de Fatos na sua Conta Google e conecte novamente.");
-  const {error:saveError}=await admin.from("youtube_connections").upsert({user_id:oauth.user_id,channel_id:channel.id,channel_title:channel.snippet?.title||"",access_token:tokenData.access_token,refresh_token:refreshToken,access_token_expires_at:new Date(Date.now()+Number(tokenData.expires_in||3600)*1000).toISOString(),scope:tokenData.scope||"https://www.googleapis.com/auth/youtube.upload",updated_at:new Date().toISOString()});
+  const {error:saveError}=await admin.from("youtube_connections").upsert({user_id:oauth.user_id,channel_id:channel.id,channel_title:channel.snippet?.title||"",access_token:tokenData.access_token,refresh_token:refreshToken,access_token_expires_at:new Date(Date.now()+Number(tokenData.expires_in||3600)*1000).toISOString(),scope:tokenData.scope||"https://www.googleapis.com/auth/youtube.upload https://www.googleapis.com/auth/youtube.readonly",updated_at:new Date().toISOString()});
   if(saveError) {console.error("[youtube-callback] save failed",saveError.message);return fail("Não foi possível salvar a conexão do YouTube.");}
   return Response.redirect(APP_URL+"/configuracoes?integration=youtube_connected",302);
  } catch(e){console.error("[youtube-callback]",e?.message||e);return fail("Falha inesperada ao conectar o YouTube.");}
