@@ -39,12 +39,29 @@ function Settings() {
   const { user, logout } = useAuth();
   const [saving, setSaving] = useState(false);
   const [tiktok, setTiktok] = useState({ loading: true, connected: false, account: null, busy: false });
+  const [youtube, setYoutube] = useState({ loading: true, connected: false, account: null, busy: false });
   useEffect(() => {
     supabase.functions.invoke("tiktok-connect", { body: { action: "status" } }).then(({ data, error }) => {
       setTiktok({ loading: false, connected: !!data?.connected, account: data?.account || null, busy: false });
       if (error) console.warn("TikTok status:", error.message);
     });
   }, []);
+  useEffect(() => {
+    supabase.functions.invoke("youtube-connect", { body: { action: "status" } }).then(({ data, error }) => {
+      setYoutube({ loading: false, connected: !!data?.connected, account: data?.account || null, busy: false });
+      if (error) console.warn("YouTube status:", error.message);
+    });
+  }, []);
+  const connectYouTube = async () => {
+    setYoutube((v) => ({ ...v, busy: true }));
+    const { data, error } = await supabase.functions.invoke("youtube-connect", { body: { action: "start" } });
+    if (error || data?.error || !data?.url) {
+      toast.error(data?.error || error?.message || "Não foi possível iniciar a conexão do YouTube.");
+      setYoutube((v) => ({ ...v, busy: false }));
+      return;
+    }
+    window.location.href = data.url;
+  };
   const connectTikTok = async () => {
     setTiktok((v) => ({ ...v, busy: true }));
     const { data, error } = await supabase.functions.invoke("tiktok-connect", { body: { action: "start" } });
@@ -128,6 +145,14 @@ function Settings() {
           <button type="button" onClick={connectTikTok} disabled={tiktok.busy || tiktok.loading || tiktok.connected} className="inline-flex h-10 items-center rounded-full bg-foreground px-4 text-xs font-medium text-background disabled:opacity-50">{tiktok.busy ? "Conectando..." : tiktok.connected ? "Conectada" : "Conectar TikTok"}</button>
         </div>
         <p className="mt-3 text-xs text-muted-foreground">A publicação direta depende da aprovação do app nas permissões de publicação do TikTok.</p>
+      </section>
+
+      <section className="mt-3 rounded-2xl border border-border/70 bg-card/40 p-5">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div><p className="text-sm font-medium">Canal do YouTube</p><p className="mt-1 text-xs text-muted-foreground">{youtube.loading ? "Verificando conexão..." : youtube.connected ? `Conectado como ${youtube.account?.channel_title || "canal autorizado"}` : "Conecte o canal que receberá os vídeos da Fábrica."}</p></div>
+          <button type="button" onClick={connectYouTube} disabled={youtube.busy || youtube.loading || youtube.connected} className="inline-flex h-10 items-center rounded-full bg-foreground px-4 text-xs font-medium text-background disabled:opacity-50">{youtube.busy ? "Conectando..." : youtube.connected ? "Conectado" : "Conectar YouTube"}</button>
+        </div>
+        <p className="mt-3 text-xs text-muted-foreground">A Fábrica solicitará somente a permissão necessária para enviar vídeos ao canal autorizado.</p>
       </section>
 
       <form onSubmit={submit} className="mt-10 space-y-5">
