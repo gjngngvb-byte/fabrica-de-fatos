@@ -95,14 +95,22 @@ export default function RenderBlock({ video }) {
         intro: introCalloutEnabled, outro: outroCalloutEnabled,
         introText: "", introTitle: "", outroText: "", channelName: "",
       });
-      const wordCount = String(currentVideo.script || "").trim().split(/\s+/).filter(Boolean).length;
+      const scriptBodyWordCount = String(currentVideo.script || "").trim().split(/\s+/).filter(Boolean).length;
+      const calloutWordCount =
+        (studioConfig?.intro_callout_enabled !== false
+          ? String(studioConfig?.intro_callout || currentVideo.hook || "").trim().split(/\s+/).filter(Boolean).length
+          : 0) +
+        (studioConfig?.outro_callout_enabled !== false
+          ? String(studioConfig?.cta || "").trim().split(/\s+/).filter(Boolean).length
+          : 0);
+      const spokenWordCount = scriptBodyWordCount + calloutWordCount;
       const normalizeNarration = (value) => String(value || "").normalize("NFC").replace(/\s+/g, " ").trim();
       const sceneNarration = Array.isArray(currentVideo.scenes)
         ? currentVideo.scenes.map((scene) => normalizeNarration(scene?.narration)).filter(Boolean).join(" ")
         : "";
       const scenesMatchScript = Boolean(currentVideo.script) &&
         normalizeNarration(sceneNarration) === normalizeNarration(currentVideo.script);
-      if (wordCount < minScriptWords || wordCount > maxScriptWords || !Array.isArray(currentVideo.scenes) ||
+      if (spokenWordCount < minScriptWords || spokenWordCount > maxScriptWords || !Array.isArray(currentVideo.scenes) ||
           currentVideo.scenes.length !== targetSceneCountLocal || !scenesMatchScript) {
         setRender({ status: "renderizando", url: "", error: "", progress: 2, detail: "FASE 1/6 · Conferindo a correspondência entre roteiro e cenas e preparando o roteiro correto." });
         let progressPollBusy = false;
