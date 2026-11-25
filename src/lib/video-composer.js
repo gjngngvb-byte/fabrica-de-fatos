@@ -289,8 +289,8 @@ export async function recordNarratedSlideshow(video, onProgress = () => {}) {
     throw new Error("Este navegador não oferece gravação de vídeo. Abra o estúdio no Chrome ou Edge atualizado.");
   }
   const scenes = Array.isArray(video.scenes) ? video.scenes : [];
-  if (scenes.length !== 15 || !video.audio_url) {
-    throw new Error("A montagem exige exatamente 15 cenas e a narração final.");
+  if (scenes.length < 6 || !video.audio_url) {
+    throw new Error("A montagem exige pelo menos 6 cenas e a narração final.");
   }
 
   const images = [];
@@ -335,19 +335,19 @@ export async function recordNarratedSlideshow(video, onProgress = () => {}) {
     const introEnabled = video.intro_callout_enabled !== false;
     const outroEnabled = video.outro_callout_enabled !== false;
     const introCalloutUrl = introEnabled ? scenes[0]?.intro_callout_image_url : "";
-    const outroCalloutUrl = outroEnabled ? scenes[14]?.outro_callout_image_url : "";
+    const outroCalloutUrl = outroEnabled ? scenes[scenes.length - 1]?.outro_callout_image_url : "";
     if (introEnabled && !introCalloutUrl) throw new Error("A chamada inicial está ativada, mas a imagem não foi encontrada.");
     if (outroEnabled && !outroCalloutUrl) throw new Error("A chamada final está ativada, mas a imagem não foi encontrada.");
     const totalImageCount = scenes.length +
       Number(Boolean(introCalloutUrl)) +
       Number(Boolean(outroCalloutUrl));
-    if (introEnabled && outroEnabled && totalImageCount !== 17) {
-      throw new Error("A montagem recebeu " + totalImageCount + " imagens. São obrigatórias 17: chamada inicial + 15 cenas + chamada final.");
+    if (introEnabled && outroEnabled && totalImageCount !== scenes.length + 2) {
+      throw new Error("A montagem recebeu " + totalImageCount + " imagens. São obrigatórias " + (scenes.length + 2) + ": cenas + chamadas inicial e final.");
     }
     for (let i = 0; i < scenes.length; i++) {
       if (!scenes[i]?.image_url) throw new Error("A cena " + (i + 1) + " não possui imagem.");
       images.push(await loadBitmap(scenes[i].image_url));
-      onProgress(Math.round(((i + 1) / totalImageCount) * 8), "Carregando imagem principal " + (i + 1) + " de 15");
+      onProgress(Math.round(((i + 1) / totalImageCount) * 8), "Carregando imagem principal " + (i + 1) + " de " + scenes.length);
     }
     if (introCalloutUrl) {
       callouts.introIndex = images.length;
@@ -381,8 +381,9 @@ export async function recordNarratedSlideshow(video, onProgress = () => {}) {
       musicBuffer = await audioContext.decodeAudioData(await musicResponse.arrayBuffer());
       if (!musicBuffer.duration) throw new Error("A música escolhida está vazia ou inválida.");
     }
-    if (audioBuffer.duration < 120 || audioBuffer.duration > 360) {
-      throw new Error("A narração completa tem " + Math.round(audioBuffer.duration) + " segundos. O limite é de 2 a 6 minutos, incluindo as chamadas.");
+    const targetDuration = Math.max(120, Math.min(300, Number(video.duration_target) || 180));
+    if (audioBuffer.duration < targetDuration * 0.8 || audioBuffer.duration > targetDuration + 2) {
+      throw new Error("A narração ficou com " + Math.round(audioBuffer.duration) + " segundos, mas a duração escolhida é " + targetDuration + " segundos. A montagem foi interrompida para não entregar um vídeo fora do tempo.");
     }
 
     // Supabase Free accepts files up to 50 MiB. Keep a safety margin for MP4
