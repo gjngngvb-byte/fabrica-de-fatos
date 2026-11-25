@@ -176,7 +176,7 @@ export default function RenderBlock({ video }) {
           setRender({
             status: "renderizando", url: "", error: "",
             progress: 5 + Math.round(((i + 1) / total) * 34),
-            detail: "FASE 2/6 · Imagem " + String(i + 1).padStart(2, "0") + "/15 já pronta · " + pct(i + 1, total) + "%.",
+            detail: "FASE 2/6 · Imagem " + String(i + 1).padStart(2, "0") + "/" + total + " já pronta · " + pct(i + 1, total) + "%.",
           });
           continue;
         }
@@ -192,7 +192,7 @@ export default function RenderBlock({ video }) {
         setRender({
           status: "renderizando", url: "", error: "",
           progress: 5 + Math.round(((i + 1) / total) * 38),
-          detail: "FASE 2/6 · Imagem " + String(i + 1).padStart(2, "0") + "/15 concluída · " + pct(i + 1, total) + "%.",
+          detail: "FASE 2/6 · Imagem " + String(i + 1).padStart(2, "0") + "/" + total + " concluída · " + pct(i + 1, total) + "%.",
         });
       }
 
@@ -268,7 +268,7 @@ export default function RenderBlock({ video }) {
           setRender({
             status: "renderizando", url: "", error: "",
             progress: 43 + Math.round(((i + 1) / total) * 24),
-            detail: "FASE 3/6 · Narração " + String(i + 1).padStart(2, "0") + "/15 já pronta · " + pct(i + 1, total) + "%.",
+            detail: "FASE 3/6 · Narração " + String(i + 1).padStart(2, "0") + "/" + total + " já pronta · " + pct(i + 1, total) + "%.",
           });
           continue;
         }
@@ -284,7 +284,7 @@ export default function RenderBlock({ video }) {
         setRender({
           status: "renderizando", url: "", error: "",
           progress: 43 + Math.round(((i + 1) / total) * 24),
-          detail: "FASE 3/6 · Narração " + String(i + 1).padStart(2, "0") + "/15 concluída · " + pct(i + 1, total) + "%.",
+          detail: "FASE 3/6 · Narração " + String(i + 1).padStart(2, "0") + "/" + total + " concluída · " + pct(i + 1, total) + "%.",
         });
       }
 
