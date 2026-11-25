@@ -13,7 +13,6 @@ function safeFilename(value) {
   return String(value || "fabrica-de-fatos").replace(/[^a-z0-9-_]+/gi, "-").slice(0, 70);
 }
 
-const TOTAL_SCENES = 15;
 const pct = (done, total) => Math.round((done / Math.max(1, total)) * 100);
 
 export default function RenderBlock({ video }) {
@@ -53,6 +52,7 @@ export default function RenderBlock({ video }) {
     intro: true, outro: true, introText: "", introTitle: "", outroText: "", channelName: "",
   });
   const [outputResolution, setOutputResolution] = useState("1080p");
+  const [targetSceneCount, setTargetSceneCount] = useState(9);
   const [activeVideo, setActiveVideo] = useState(video);
   const started = useRef(false);
 
@@ -77,6 +77,10 @@ export default function RenderBlock({ video }) {
       setActiveVideo(currentVideo);
       setPreviewScenes(currentVideo.scenes || []);
       const studioConfig = await loadStudio();
+      const targetSceneCountLocal = Math.max(6, Math.min(15, Math.round((Number(studioConfig?.duration_target) || 180) / 20)));
+      const lastSceneIndex = targetSceneCountLocal - 1;
+      const minScriptWords = Math.max(180, Math.floor(Math.max(90, (Number(studioConfig?.duration_target) || 180) - 12) * 2.2 * 0.97));
+      setTargetSceneCount(targetSceneCountLocal);
       const resumeEnabled = studioConfig?.auto_resume_enabled !== false;
       autoResumeRef.current = resumeEnabled;
       const outputResolution = studioConfig?.output_resolution === "720p" ? "720p" : "1080p";
@@ -94,8 +98,8 @@ export default function RenderBlock({ video }) {
         : "";
       const scenesMatchScript = Boolean(currentVideo.script) &&
         normalizeNarration(sceneNarration) === normalizeNarration(currentVideo.script);
-      if (wordCount < 280 || !Array.isArray(currentVideo.scenes) ||
-          currentVideo.scenes.length !== TOTAL_SCENES || !scenesMatchScript) {
+      if (wordCount < minScriptWords || !Array.isArray(currentVideo.scenes) ||
+          currentVideo.scenes.length !== targetSceneCountLocal || !scenesMatchScript) {
         setRender({ status: "renderizando", url: "", error: "", progress: 2, detail: "FASE 1/6 · Conferindo a correspondência entre roteiro e cenas e preparando o roteiro correto." });
         let progressPollBusy = false;
         const progressPoll = setInterval(async () => {
@@ -122,7 +126,7 @@ export default function RenderBlock({ video }) {
           clearInterval(progressPoll);
         }
         currentVideo = scriptResult?.video || scriptResult;
-        if (!currentVideo?.script || !Array.isArray(currentVideo.scenes) || currentVideo.scenes.length !== TOTAL_SCENES) {
+        if (!currentVideo?.script || !Array.isArray(currentVideo.scenes) || currentVideo.scenes.length !== targetSceneCountLocal) {
           throw new Error("A IA não retornou um roteiro completo dividido em exatamente 15 partes.");
         }
         const returnedSceneNarration = currentVideo.scenes.map((scene) => normalizeNarration(scene?.narration)).filter(Boolean).join(" ");
@@ -158,10 +162,10 @@ export default function RenderBlock({ video }) {
 
       let scenes = [...(currentVideo.scenes || [])];
       setPreviewScenes(scenes);
-      const total = TOTAL_SCENES;
+      const total = targetSceneCountLocal;
 
-      currentPhase = "geração das 15 imagens";
-      // FASE 2: as quinze imagens são concluídas antes de iniciar qualquer voz.
+      currentPhase = "geração das imagens";
+      // FASE 2: as imagens são concluídas antes de iniciar qualquer voz.
       for (let i = 0; i < total; i++) {
         if (scenes[i]?.image_url && scenes[i]?.image_path) {
           setPreviewScenes([...scenes]);
@@ -175,7 +179,7 @@ export default function RenderBlock({ video }) {
         setRender({
           status: "renderizando", url: "", error: "",
           progress: 5 + Math.round((i / total) * 34),
-          detail: "FASE 2/6 · Gerando imagem " + String(i + 1).padStart(2, "0") + "/15 · " + pct(i, total) + "% concluído.",
+          detail: "FASE 2/6 · Gerando imagem " + String(i + 1).padStart(2, "0") + "/" + total + " · " + pct(i, total) + "% concluído.",
         });
         const result = await createImage({ data: { videoId: video.id, sceneIndex: i } });
         if (result?.video?.scenes) scenes = result.video.scenes;
@@ -190,8 +194,8 @@ export default function RenderBlock({ video }) {
 
       currentPhase = "geração das imagens das chamadas";
       const calloutTasks = [
-        ...(introCalloutEnabled ? [{ sceneIndex: 15, label: "chamada inicial", exists: () => scenes[0]?.intro_callout_image_url && scenes[0]?.intro_callout_image_path }] : []),
-        ...(outroCalloutEnabled ? [{ sceneIndex: 16, label: "chamada final", exists: () => scenes[14]?.outro_callout_image_url && scenes[14]?.outro_callout_image_path }] : []),
+        ...(introCalloutEnabled ? [{ sceneIndex: targetSceneCountLocal, label: "chamada inicial", exists: () => scenes[0]?.intro_callout_image_url && scenes[0]?.intro_callout_image_path }] : []),
+        ...(outroCalloutEnabled ? [{ sceneIndex: targetSceneCountLocal + 1, label: "chamada final", exists: () => scenes[lastSceneIndex]?.outro_callout_image_url && scenes[lastSceneIndex]?.outro_callout_image_path }] : []),
       ];
       for (let i = 0; i < calloutTasks.length; i++) {
         const task = calloutTasks[i];
@@ -206,7 +210,7 @@ export default function RenderBlock({ video }) {
           currentVideo = result.video;
           scenes = result.video.scenes;
         } else if (result?.scene) {
-          const targetIndex = task.sceneIndex === 15 ? 0 : 14;
+          const targetIndex = task.sceneIndex === targetSceneCountLocal ? 0 : 14;
           scenes[targetIndex] = result.scene;
         }
         setPreviewScenes([...scenes]);
@@ -215,14 +219,14 @@ export default function RenderBlock({ video }) {
       if (introCalloutEnabled && !(scenes[0]?.intro_callout_image_url && scenes[0]?.intro_callout_image_path)) {
         throw new Error("A chamada inicial está ativada, mas sua imagem não foi criada. A montagem foi interrompida para não gerar um vídeo incompleto.");
       }
-      if (outroCalloutEnabled && !(scenes[14]?.outro_callout_image_url && scenes[14]?.outro_callout_image_path)) {
+      if (outroCalloutEnabled && !(scenes[lastSceneIndex]?.outro_callout_image_url && scenes[lastSceneIndex]?.outro_callout_image_path)) {
         throw new Error("A chamada final está ativada, mas sua imagem não foi criada. A montagem foi interrompida para não gerar um vídeo incompleto.");
       }
       if (introCalloutEnabled && outroCalloutEnabled) {
         const imageCount = scenes.length +
           Number(Boolean(scenes[0]?.intro_callout_image_url)) +
-          Number(Boolean(scenes[14]?.outro_callout_image_url));
-        if (imageCount !== 17) throw new Error("A produção precisa conter exatamente 17 imagens: 1 chamada inicial + 15 cenas + 1 chamada final. Foram encontradas " + imageCount + ".");
+          Number(Boolean(scenes[lastSceneIndex]?.outro_callout_image_url));
+        if (imageCount !== scenes.length + 2) throw new Error("A produção precisa conter as " + scenes.length + " imagens principais e as duas chamadas extras. Foram encontradas " + imageCount + " imagens.");
       }
 
       const introCalloutSpeechText = [calloutDisplay.introTitle, calloutDisplay.introText].filter(Boolean).join(". ").trim();
@@ -234,16 +238,16 @@ export default function RenderBlock({ video }) {
       currentPhase = "narração das chamadas inicial e final";
       const calloutSpeechTasks = [
         ...(introCalloutEnabled && introCalloutSpeechText
-          ? [{ sceneIndex: 15, narrationText: introCalloutSpeechText, label: "chamada inicial" }]
+          ? [{ sceneIndex: targetSceneCountLocal, narrationText: introCalloutSpeechText, label: "chamada inicial" }]
           : []),
         ...(outroCalloutEnabled && outroCalloutSpeechText
-          ? [{ sceneIndex: 16, narrationText: outroCalloutSpeechText, label: "chamada final" }]
+          ? [{ sceneIndex: targetSceneCountLocal + 1, narrationText: outroCalloutSpeechText, label: "chamada final" }]
           : []),
       ];
       for (const task of calloutSpeechTasks) {
-        const targetScene = task.sceneIndex === 15 ? scenes[0] : scenes[14];
-        const cachedPath = task.sceneIndex === 15 ? targetScene?.intro_audio_path : targetScene?.outro_audio_path;
-        const cachedText = task.sceneIndex === 15 ? targetScene?.intro_audio_text : targetScene?.outro_audio_text;
+        const targetScene = task.sceneIndex === targetSceneCountLocal ? scenes[0] : scenes[lastSceneIndex];
+        const cachedPath = task.sceneIndex === targetSceneCountLocal ? targetScene?.intro_audio_path : targetScene?.outro_audio_path;
+        const cachedText = task.sceneIndex === targetSceneCountLocal ? targetScene?.intro_audio_text : targetScene?.outro_audio_text;
         if (cachedPath && cachedText === task.narrationText) continue;
         setRender({ status: "renderizando", url: "", error: "", progress: 42,
           detail: "FASE 3/6 · Criando voz da " + task.label + "." });
@@ -253,7 +257,7 @@ export default function RenderBlock({ video }) {
         setActiveVideo(currentVideo);
       }
 
-      currentPhase = "geração das 15 narrações";
+      currentPhase = "geração das narrações";
       // Somente as quinze cenas centrais recebem os trechos do roteiro.
       for (let i = 0; i < total; i++) {
         if (scenes[i]?.audio_path && Number(scenes[i]?.audio_duration) > 0) {
@@ -267,7 +271,7 @@ export default function RenderBlock({ video }) {
         setRender({
           status: "renderizando", url: "", error: "",
           progress: 43 + Math.round((i / total) * 24),
-          detail: "FASE 3/6 · Criando narração " + String(i + 1).padStart(2, "0") + "/15 · " + pct(i, total) + "% concluído.",
+          detail: "FASE 3/6 · Criando narração " + String(i + 1).padStart(2, "0") + "/" + total + " · " + pct(i, total) + "% concluído.",
         });
         const result = await createSpeech({ data: { videoId: video.id, sceneIndex: i } });
         if (result?.video?.scenes) scenes = result.video.scenes;
@@ -285,10 +289,10 @@ export default function RenderBlock({ video }) {
       const introCalloutAudioReady = !introCalloutEnabled || !introCalloutSpeechText ||
         Boolean(scenes[0]?.intro_audio_path && scenes[0]?.intro_audio_text === introCalloutSpeechText);
       const outroCalloutAudioReady = !outroCalloutEnabled || !outroCalloutSpeechText ||
-        Boolean(scenes[14]?.outro_audio_path && scenes[14]?.outro_audio_text === outroCalloutSpeechText);
+        Boolean(scenes[lastSceneIndex]?.outro_audio_path && scenes[lastSceneIndex]?.outro_audio_text === outroCalloutSpeechText);
       const calloutTimelineReady = !(introCalloutSpeechText || outroCalloutSpeechText) ||
         Number(scenes[0]?.audio_timeline_version) === 1;
-      const savedAudioReady = Boolean(currentVideo.audio_url) && scenes.length === TOTAL_SCENES &&
+      const savedAudioReady = Boolean(currentVideo.audio_url) && scenes.length === targetSceneCountLocal &&
         scenes.every((scene) => scene?.audio_path && Number(scene?.audio_duration) > 0) &&
         introCalloutAudioReady && outroCalloutAudioReady && calloutTimelineReady;
       if (savedAudioReady) {
@@ -297,11 +301,11 @@ export default function RenderBlock({ video }) {
         currentVideo = audioResult.video;
         setRender({ status: "renderizando", url: "", error: "", progress: 69, detail: "FASE 4/6 · Narração final já salva. Reutilizando o áudio existente." });
       } else {
-        setRender({ status: "renderizando", url: "", error: "", progress: 69, detail: "FASE 4/6 · Unindo os 15 trechos de voz em uma única narração e montando a linha do tempo." });
+        setRender({ status: "renderizando", url: "", error: "", progress: 69, detail: "FASE 4/6 · Unindo os " + total + " trechos de voz em uma única narração e montando a linha do tempo." });
         audioResult = await finalizeAssets({ data: { videoId: video.id, action: "finalize_audio" } });
         currentVideo = audioResult?.video;
       }
-      if (!currentVideo?.audio_url || currentVideo?.scenes?.length !== TOTAL_SCENES) {
+      if (!currentVideo?.audio_url || currentVideo?.scenes?.length !== targetSceneCountLocal) {
         throw new Error("Não foi possível unir e validar a narração completa.");
       }
       setActiveVideo(currentVideo);
@@ -313,11 +317,11 @@ export default function RenderBlock({ video }) {
       if (savedCaptionsReady) {
         setRender({ status: "renderizando", url: "", error: "", progress: 72, detail: "FASE 5/6 · Legendas já sincronizadas. Reutilizando os dados existentes." });
       } else {
-        setRender({ status: "renderizando", url: "", error: "", progress: 72, detail: "FASE 5/6 · Criando legendas a partir das 15 partes do roteiro e sincronizando com a voz." });
+        setRender({ status: "renderizando", url: "", error: "", progress: 72, detail: "FASE 5/6 · Criando legendas a partir das " + targetSceneCountLocal + " partes do roteiro e sincronizando com a voz." });
         const captionResult = await finalizeAssets({ data: { videoId: video.id, action: "build_captions" } });
         currentVideo = captionResult?.video;
       }
-      if (!currentVideo?.audio_url || currentVideo?.scenes?.length !== TOTAL_SCENES ||
+      if (!currentVideo?.audio_url || currentVideo?.scenes?.length !== targetSceneCountLocal ||
           currentVideo.scenes.some((scene) => !Array.isArray(scene.captions) || !scene.captions.length)) {
         throw new Error("As legendas não foram criadas e sincronizadas corretamente.");
       }
@@ -350,6 +354,7 @@ export default function RenderBlock({ video }) {
         outro_channel_name: calloutDisplay.channelName,
         music_url: musicChoice.url,
         music_volume: 0.1,
+        duration_target: Number(studioConfig?.duration_target) || 180,
       }, (progress, detail) => {
         const overall = 74 + Math.round((progress / 75) * 16);
         setRender({ status: "renderizando", url: "", error: "", progress: overall, detail: "FASE 6/6 · " + detail });
@@ -382,7 +387,7 @@ export default function RenderBlock({ video }) {
       const { data: updated, error: updateError } = await supabase.from("videos").update({
         mp4_url: signed.signedUrl,
         render_status: "pronto",
-        render_error: "Longform MP4 | " + Math.round(duration) + "s | 17 imagens (1 chamada inicial + 15 cenas + 1 chamada final) + narração contínua + legendas sincronizadas",
+        render_error: "Longform MP4 | " + Math.round(duration) + "s | " + (scenes.length + 2) + " imagens (chamadas + cenas) + narração contínua + legendas sincronizadas",
         status: "pronto",
         error: "",
       }).eq("id", video.id).eq("created_by", authData.user.id).select("*").single();
@@ -509,7 +514,7 @@ export default function RenderBlock({ video }) {
         <video src={render.url} controls playsInline preload="metadata"
           className="aspect-[9/16] w-full rounded-[2rem] border border-border bg-black object-cover shadow-2xl shadow-black/50" />
         <div className="mt-3 flex items-center gap-2 text-xs text-emerald-500">
-          <CheckCircle2 className="size-4" /> MP4 validado · 17 imagens, narração, música e legendas sincronizadas
+          <CheckCircle2 className="size-4" /> MP4 validado · imagens, narração, música e legendas sincronizadas
         </div>
         <div className="mt-4 rounded-xl border border-border bg-card/60 p-3">
           <div className="mb-2 flex items-center justify-between text-[11px]">
@@ -537,7 +542,7 @@ export default function RenderBlock({ video }) {
     <div>
       <PhonePlayer scenes={previewScenes} audioUrl={activeVideo?.audio_url || video.audio_url} title={activeVideo?.title || video.title}
         introImageUrl={calloutSettings.intro ? previewScenes[0]?.intro_callout_image_url : ""}
-        outroImageUrl={calloutSettings.outro ? previewScenes[14]?.outro_callout_image_url : ""}
+        outroImageUrl={calloutSettings.outro ? previewScenes[targetSceneCount - 1]?.outro_callout_image_url : ""}
         introText={calloutSettings.introText} introTitle={calloutSettings.introTitle}
         outroText={calloutSettings.outroText} channelName={calloutSettings.channelName} />
       {activeVideo?.title && (
@@ -549,17 +554,17 @@ export default function RenderBlock({ video }) {
       )}
       <div className="mt-3 rounded-xl border border-border bg-card/50 p-3">
         <div className="mb-2 flex items-center justify-between text-[11px]">
-          <span className="font-semibold text-foreground">Prévia das 15 cenas</span>
-          <span className="text-muted-foreground">{imagesReady}/15 imagens principais</span>
+          <span className="font-semibold text-foreground">Prévia das {targetSceneCount} cenas</span>
+          <span className="text-muted-foreground">{imagesReady}/{targetSceneCount} imagens principais</span>
         </div>
         <div className="grid grid-cols-5 gap-2">
-          {Array.from({ length: TOTAL_SCENES }, (_, index) => {
+          {Array.from({ length: targetSceneCount }, (_, index) => {
             const scene = previewScenes[index];
             return (
               <div key={scene?.id || index} className="relative aspect-[3/4] overflow-hidden rounded-md bg-secondary">
                 {scene?.image_url ? <img src={scene.image_url} alt={"Cena " + (index + 1)} className="size-full object-cover" /> :
                   <div className="grid size-full place-items-center text-[10px] text-muted-foreground">Aguardando</div>}
-                <span className="absolute bottom-0 inset-x-0 bg-black/65 py-0.5 text-center text-[9px] text-white">{String(index + 1).padStart(2, "0")}/15</span>
+                <span className="absolute bottom-0 inset-x-0 bg-black/65 py-0.5 text-center text-[9px] text-white">{String(index + 1).padStart(2, "0")}/{targetSceneCount}</span>
               </div>
             );
           })}
@@ -571,14 +576,14 @@ export default function RenderBlock({ video }) {
               <p className="p-2 text-[10px] text-muted-foreground">Imagem extra · Chamada inicial</p>
             </div>
           )}
-          {calloutSettings.outro && previewScenes[14]?.outro_callout_image_url && (
+          {calloutSettings.outro && previewScenes[targetSceneCount - 1]?.outro_callout_image_url && (
             <div className="overflow-hidden rounded-lg border border-border">
-              <img src={previewScenes[14].outro_callout_image_url} alt="Chamada final" className="aspect-[3/4] w-full object-cover" />
+              <img src={previewScenes[targetSceneCount - 1].outro_callout_image_url} alt="Chamada final" className="aspect-[3/4] w-full object-cover" />
               <p className="p-2 text-[10px] text-muted-foreground">Imagem extra · Chamada final</p>
             </div>
           )}
         </div>
-        <p className="mt-2 text-[10px] text-muted-foreground">{speechReady}/15 partes da narração prontas</p>
+        <p className="mt-2 text-[10px] text-muted-foreground">{speechReady}/{targetSceneCount} partes da narração prontas</p>
       </div>
       <div className="mt-5 space-y-3">
         <div className="flex h-11 w-full items-center justify-center gap-2 rounded-full border border-border bg-card/50 text-xs font-semibold text-muted-foreground">
@@ -611,7 +616,7 @@ export default function RenderBlock({ video }) {
         )}
         {!busy && render.status !== "falhou" && (
           <p className="text-center font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
-            MP4 vertical 9:16 · {outputResolution === "720p" ? "720 × 1280" : "1080 × 1920"} · roteiro de 2 a 5 minutos + chamadas narradas
+            MP4 vertical 9:16 · {outputResolution === "720p" ? "720 × 1280" : "1080 × 1920"} · roteiro de {Math.round((Number(activeVideo?.duration_target) || 180) / 60 * 10) / 10} min + chamadas narradas
           </p>
         )}
       </div>
