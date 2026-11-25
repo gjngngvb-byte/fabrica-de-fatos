@@ -405,7 +405,7 @@ function buildSceneNarration(script: string, visualScenes: any[], count = 15) {
   }
 
   if (groups.length !== count || groups.some((part) => !part)) {
-    throw new Error("Não foi possível organizar o roteiro em 15 partes narrativas completas.");
+    throw new Error("Não foi possível organizar o roteiro em " + count + " partes narrativas completas.");
   }
 
   return groups.map((narration, i) => ({
