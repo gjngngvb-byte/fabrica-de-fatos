@@ -54,26 +54,27 @@ function VideoDetail() {
 
   const published = video.status === "publicado";
 
-  const publishToTikTok = async () => {
+  const approveAndPublish = async () => {
     setPublishing(true);
     try {
-      const { data, error } = await supabase.functions.invoke("tiktok-publish", { body: { videoId: video.id } });
-      if (error) {
-        let message = error.message || "Falha ao publicar no TikTok.";
-        try {
-          const details = await error.context?.json();
-          if (details?.error) message = details.error;
-        } catch {}
-        toast.error(message);
+      const { data, error } = await supabase.functions.invoke("publish-approved", { body: { videoId: video.id } });
+      if (error || data?.error) {
+        toast.error(data?.error || error?.message || "Não foi possível aprovar e publicar.");
         return;
       }
-      if (data?.error) {
-        toast.error(data.error);
-        return;
+      for (const result of data.platforms || []) {
+        if (result.status === "success") toast.success(`${result.platform === "youtube" ? "YouTube" : "TikTok"}: ${result.message || "publicação iniciada"}`);
+        else toast.error(`${result.platform === "youtube" ? "YouTube" : "TikTok"}: ${result.message || "falha na publicação"}`);
       }
-      toast.success(data?.message || "Vídeo enviado ao TikTok para processamento.");
+      if (data.success) {
+        await markPublished({ data: { videoId: video.id, published: true } });
+        toast.success("Vídeo aprovado e enviado para todas as plataformas conectadas.");
+      } else {
+        toast.warning("Publicação parcial. As plataformas concluídas não serão duplicadas ao tentar novamente.");
+      }
+      await router.invalidate();
     } catch (error) {
-      toast.error(error?.message || "Não foi possível iniciar a publicação no TikTok.");
+      toast.error(error?.message || "Não foi possível concluir a publicação.");
     } finally {
       setPublishing(false);
     }
@@ -100,16 +101,16 @@ function VideoDetail() {
         <div className="lg:sticky lg:top-8 lg:self-start">
           <RenderBlock key={video.id} video={video} />
 
-          {video.mp4_url && <button onClick={publishToTikTok} disabled={publishing} className="mt-3 flex h-11 w-full items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-foreground disabled:opacity-50">{publishing ? "Enviando ao TikTok..." : "Publicar no TikTok"}</button>}
+          {video.mp4_url && !published && <button onClick={approveAndPublish} disabled={publishing} className="mt-3 flex h-11 w-full items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-foreground disabled:opacity-50">{publishing ? "Publicando nas plataformas..." : "Aprovar e publicar em todas"}</button>}
 
           <div className="mt-5 space-y-2">
             <button
-              onClick={() => run("publish", () => markPublished({ data: { videoId: video.id, published: !published } }), published ? "Marcado como pronto." : "Marcado como publicado.")}
+              onClick={() => published ? run("publish", () => markPublished({ data: { videoId: video.id, published: false } }), "Vídeo voltou para pronto.") : approveAndPublish()}
               disabled={!!busy || !video.title}
               className="flex h-10 w-full items-center justify-center gap-2 rounded-full bg-foreground text-xs font-medium text-background transition-opacity hover:opacity-90 disabled:opacity-40"
             >
               {busy === "publish" ? <Loader2 className="size-3.5 animate-spin" /> : <Check className="size-3.5" />}
-              {published ? "Voltar para pronto" : "Marcar como publicado"}
+              {published ? "Voltar para pronto" : "Aprovar e publicar"}
             </button>
 
             <button
