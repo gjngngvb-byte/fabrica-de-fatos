@@ -27,7 +27,7 @@ create table if not exists public.youtube_publications (
   video_id uuid not null references public.videos(id) on delete cascade,
   youtube_video_id text not null,
   status text not null default 'uploaded',
-  privacy_status text not null default 'public',
+  privacy_status text not null default 'private',
   watch_url text,
   error text,
   created_at timestamptz not null default now(),
