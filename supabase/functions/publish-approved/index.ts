@@ -13,7 +13,8 @@ Deno.serve(async(req)=>{
   const userClient=createClient(Deno.env.get("SUPABASE_URL")!,Deno.env.get("SUPABASE_ANON_KEY")!,{global:{headers:{Authorization:auth}}});
   const {data:{user},error:authError}=await userClient.auth.getUser(token);
   if(authError||!user) return reply({error:"Sessão inválida."},401);
-  const {videoId}=await req.json().catch(()=>({}));
+  const {videoId,privacyStatus="private"}=await req.json().catch(()=>({}));
+  if(!["public","private","unlisted"].includes(privacyStatus)) return reply({error:"Escolha uma visibilidade válida para o YouTube."},400);
   if(typeof videoId!=="string") return reply({error:"Vídeo não identificado."},400);
   const {data:video,error:videoError}=await userClient.from("videos").select("*").eq("id",videoId).eq("created_by",user.id).single();
   if(videoError||!video) return reply({error:"Vídeo não encontrado."},404);
@@ -26,7 +27,7 @@ Deno.serve(async(req)=>{
   const platforms:{platform:string,status:string,message?:string,url?:string}[]=[];
   if(!yt&&!tt) return reply({error:"Conecte pelo menos uma plataforma em Ajustes antes de aprovar o vídeo."},400);
   const invoke=async(name:string)=>{
-   const r=await fetch(Deno.env.get("SUPABASE_URL")!+"/functions/v1/"+name,{method:"POST",headers:{Authorization:auth,apikey:Deno.env.get("SUPABASE_ANON_KEY")!,"Content-Type":"application/json"},body:JSON.stringify({videoId})});
+   const r=await fetch(Deno.env.get("SUPABASE_URL")!+"/functions/v1/"+name,{method:"POST",headers:{Authorization:auth,apikey:Deno.env.get("SUPABASE_ANON_KEY")!,"Content-Type":"application/json"},body:JSON.stringify({videoId,privacyStatus})});
    const payload=await json(r);
    return {ok:r.ok&&payload.success!==false&&!payload.error,payload};
   };
