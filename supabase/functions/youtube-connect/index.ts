@@ -5,7 +5,7 @@ const reply=(data:unknown,status=200)=>Response.json(data,{status,headers:cors})
 Deno.serve(async(req)=>{
  if(req.method==="OPTIONS") return new Response("ok",{headers:cors});
  try {
-  const auth=req.headers.get("Authorization")||"", token=auth.replace(/^Bearer\\s+/i,"");
+  const auth=req.headers.get("Authorization")||"", token=auth.replace(/^Bearer\s+/i,"");
   if(!token) return reply({error:"Faça login novamente."},401);
   const client=createClient(Deno.env.get("SUPABASE_URL")!,Deno.env.get("SUPABASE_ANON_KEY")!,{global:{headers:{Authorization:auth}}});
   const {data:{user},error}=await client.auth.getUser(token);
