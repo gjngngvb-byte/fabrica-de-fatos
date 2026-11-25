@@ -152,7 +152,7 @@ function Settings() {
           <div><p className="text-sm font-medium">Canal do YouTube</p><p className="mt-1 text-xs text-muted-foreground">{youtube.loading ? "Verificando conexão..." : youtube.connected ? `Conectado como ${youtube.account?.channel_title || "canal autorizado"}` : "Conecte o canal que receberá os vídeos da Fábrica."}</p></div>
           <button type="button" onClick={connectYouTube} disabled={youtube.busy || youtube.loading || youtube.connected} className="inline-flex h-10 items-center rounded-full bg-foreground px-4 text-xs font-medium text-background disabled:opacity-50">{youtube.busy ? "Conectando..." : youtube.connected ? "Conectado" : "Conectar YouTube"}</button>
         </div>
-        <p className="mt-3 text-xs text-muted-foreground">A Fábrica solicitará somente a permissão necessária para enviar vídeos ao canal autorizado.</p>
+        <p className="mt-3 text-xs text-muted-foreground">A Fábrica solicitará permissão para enviar vídeos e identificar o canal autorizado.</p>
       </section>
 
       <form onSubmit={submit} className="mt-10 space-y-5">
